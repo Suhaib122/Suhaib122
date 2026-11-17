@@ -517,6 +517,11 @@ void SaveState()
 //------------------------------ Events -------------------------------
 int OnInit()
 {
+   if((ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+   {
+      Print("NORO requires an MT5 Hedging account. Initialization aborted.");
+      return INIT_FAILED;
+   }
    if(InpRiskPerTradePct<=0 || InpMaxAggregateRiskPct<=0 ||
       InpMaxOpenPositions<1 || InpTrailDistancePoints<1)
       return INIT_PARAMETERS_INCORRECT;
@@ -577,9 +582,15 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    }
    else if(sparam==PREFIX+"HIDE")
    {
-      g_panelVisible=!g_panelVisible;
-      if(g_panelVisible) CreateDashboard();
-      else DeleteDashboard();
+      g_panelVisible=false;
+      DeleteDashboard();
+      MakeButton("SHOW","SHOW PANEL",20,20,110,24);
+   }
+   else if(sparam==PREFIX+"SHOW")
+   {
+      ObjectSetInteger(0,PREFIX+"SHOW",OBJPROP_STATE,false);
+      CreateDashboard();
+      UpdateDashboard();
    }
 }
 //+------------------------------------------------------------------+
