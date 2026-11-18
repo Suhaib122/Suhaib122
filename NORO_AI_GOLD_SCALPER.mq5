@@ -12,22 +12,27 @@
 CTrade trade;
 
 //------------------------------ Inputs ------------------------------
+input group "الإعدادات العامة"
 input ulong  InpMagic                  = 17112026;
 input ENUM_TIMEFRAMES InpSignalTF      = PERIOD_M5; // فريم الإشارة
 input bool   InpOnlyGoldSymbols        = false; // اسم الرمز قد يكون GOLD أو XAUUSD أو لاحقة الوسيط
+input group "إدارة رأس المال والمخاطرة"
 input double InpRiskPerTradePct        = 0.25;
 input double InpMaxAggregateRiskPct    = 2.00; // الحد الأقصى للمخاطرة الإجمالية %
 input int    InpMaxOpenPositions       = 10;
 input int    InpMaxPositionsPerSide    = 10;
 input int    InpTargetTradesPerDay     = 100;     // Operational reference only; never forces entries
+input group "فلاتر السوق والدخول"
 input int    InpMaxSpreadPoints        = 250; // الحد الأقصى للسبريد بالنقاط
 input int    InpMinATRPoints           = 0; // 0 = تعطيل الحد الأدنى
 input int    InpMaxATRPoints           = 5000;
+input group "وقف الخسارة والتريلينغ"
 input int    InpStopLossPoints         = 350;
 input int    InpTrailStartPoints       = 150;
 input int    InpTrailDistancePoints    = 100;
 input int    InpTrailStepPoints        = 20;
 input int    InpSlippagePoints         = 30;
+input group "المؤشرات الفنية"
 input int    InpFastEMA                = 9;
 input int    InpMediumEMA              = 21;
 input int    InpSlowEMA                = 50;
@@ -39,6 +44,7 @@ input int    InpMACDSlow               = 26;
 input int    InpMACDSignal             = 9;
 input int    InpATRPeriod              = 14;
 input double InpMinSignalScore         = 4.0;     // الحد الأدنى لقوة الإشارة من 7
+input group "فلتر الجلسات والأخبار"
 input bool   InpUseSessionFilter       = false; // فلتر ساعات التداول
 input int    InpSessionStartHour       = 6;       // server time
 input int    InpSessionEndHour         = 22;      // server time
@@ -46,6 +52,7 @@ input bool   InpUseCalendarNewsFilter  = false; // فلتر الأخبار (قد
 input int    InpNewsMinutesBefore      = 20;
 input int    InpNewsMinutesAfter       = 20;
 input string InpNewsCurrency           = "USD";
+input group "لوحة المعلومات والتحكم"
 input bool   InpShowDashboard          = true; // إظهار لوحة المعلومات
 input bool   InpCloseOnlyThisEA        = true; // إدارة صفقات هذا الروبوت فقط
 input bool   InpAllowOneEntryPerBar      = false; // السماح بإعادة الدخول على الشمعة نفسها بعد تقييم جديد
@@ -388,7 +395,7 @@ void SetLabel(string name,string text,int x,int y,color clr,int size=9)
    ObjectSetInteger(0,id,OBJPROP_YDISTANCE,y);
    ObjectSetInteger(0,id,OBJPROP_COLOR,clr);
    ObjectSetInteger(0,id,OBJPROP_FONTSIZE,size);
-   ObjectSetString(0,id,OBJPROP_FONT,"Arial");
+   ObjectSetString(0,id,OBJPROP_FONT,"Tahoma");
    ObjectSetString(0,id,OBJPROP_TEXT,text);
 }
 void MakeButton(string name,string caption,int x,int y,int w,int h)
