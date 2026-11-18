@@ -4,25 +4,25 @@
 //| Risk-first implementation; no daily profit/loss stop.            |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.00"
+#property version   "1.10"
 #property description "NORO AI GOLD SCALPER EA - XAUUSD M5"
-#property description "EMA/RSI/MACD/ATR + candle confirmation + dynamic trailing"
+#property description "واجهة وإعدادات عربية - EMA/RSI/MACD/ATR - Trailing Stop"
 
 #include <Trade/Trade.mqh>
 CTrade trade;
 
 //------------------------------ Inputs ------------------------------
 input ulong  InpMagic                  = 17112026;
-input ENUM_TIMEFRAMES InpSignalTF      = PERIOD_M5;
-input bool   InpOnlyGoldSymbols        = true;
+input ENUM_TIMEFRAMES InpSignalTF      = PERIOD_M5; // فريم الإشارة
+input bool   InpOnlyGoldSymbols        = false; // اسم الرمز قد يكون GOLD أو XAUUSD أو لاحقة الوسيط
 input double InpRiskPerTradePct        = 0.25;
-input double InpMaxAggregateRiskPct    = 2.00;
+input double InpMaxAggregateRiskPct    = 2.00; // الحد الأقصى للمخاطرة الإجمالية %
 input int    InpMaxOpenPositions       = 10;
 input int    InpMaxPositionsPerSide    = 10;
 input int    InpTargetTradesPerDay     = 100;     // Operational reference only; never forces entries
-input int    InpMaxSpreadPoints        = 80;
-input int    InpMinATRPoints           = 20;
-input int    InpMaxATRPoints           = 2000;
+input int    InpMaxSpreadPoints        = 250; // الحد الأقصى للسبريد بالنقاط
+input int    InpMinATRPoints           = 0; // 0 = تعطيل الحد الأدنى
+input int    InpMaxATRPoints           = 5000;
 input int    InpStopLossPoints         = 350;
 input int    InpTrailStartPoints       = 150;
 input int    InpTrailDistancePoints    = 100;
@@ -32,22 +32,24 @@ input int    InpFastEMA                = 9;
 input int    InpMediumEMA              = 21;
 input int    InpSlowEMA                = 50;
 input int    InpRSIPeriod              = 14;
-input double InpBuyRSIMin              = 52.0;
-input double InpSellRSIMax             = 48.0;
+input double InpBuyRSIMin              = 50.0;
+input double InpSellRSIMax             = 50.0;
 input int    InpMACDFast               = 12;
 input int    InpMACDSlow               = 26;
 input int    InpMACDSignal             = 9;
 input int    InpATRPeriod              = 14;
-input double InpMinSignalScore         = 6.0;     // out of 7
-input bool   InpUseSessionFilter       = false;
+input double InpMinSignalScore         = 4.0;     // الحد الأدنى لقوة الإشارة من 7
+input bool   InpUseSessionFilter       = false; // فلتر ساعات التداول
 input int    InpSessionStartHour       = 6;       // server time
 input int    InpSessionEndHour         = 22;      // server time
-input bool   InpUseCalendarNewsFilter  = false;   // MT5 calendar availability/broker dependent
+input bool   InpUseCalendarNewsFilter  = false; // فلتر الأخبار (قد يعتمد على تقويم الوسيط)   // MT5 calendar availability/broker dependent
 input int    InpNewsMinutesBefore      = 20;
 input int    InpNewsMinutesAfter       = 20;
 input string InpNewsCurrency           = "USD";
-input bool   InpShowDashboard          = true;
-input bool   InpCloseOnlyThisEA        = true;
+input bool   InpShowDashboard          = true; // إظهار لوحة المعلومات
+input bool   InpCloseOnlyThisEA        = true; // إدارة صفقات هذا الروبوت فقط
+input bool   InpAllowOneEntryPerBar      = false; // السماح بإعادة الدخول على الشمعة نفسها بعد تقييم جديد
+input int    InpSignalCooldownSeconds    = 15; // أقل فترة بين محاولات الدخول بالثواني
 
 //------------------------------ Globals -----------------------------
 int hFast=INVALID_HANDLE, hMedium=INVALID_HANDLE, hSlow=INVALID_HANDLE;
@@ -55,6 +57,8 @@ int hRSI=INVALID_HANDLE, hMACD=INVALID_HANDLE, hATR=INVALID_HANDLE;
 bool g_enabled=true, g_panelVisible=true;
 datetime g_lastBar=0;
 datetime g_lastEntryBar=0;
+datetime g_lastAttemptTime=0;
+string g_blockReason="بانتظار إشارة";
 string PREFIX="NORO_AI_";
 string g_status="INITIALIZING";
 double g_peakEquity=0.0, g_maxDD=0.0;
@@ -156,17 +160,11 @@ bool BearishCandle(int shift)
 }
 bool BullishPriceAction(int shift)
 {
-   double close1=iClose(_Symbol,InpSignalTF,shift);
-   double high2=iHigh(_Symbol,InpSignalTF,shift+1);
-   double close2=iClose(_Symbol,InpSignalTF,shift+1);
-   return BullishCandle(shift) && (close1>high2 || close1>close2);
+   return BullishCandle(shift);
 }
 bool BearishPriceAction(int shift)
 {
-   double close1=iClose(_Symbol,InpSignalTF,shift);
-   double low2=iLow(_Symbol,InpSignalTF,shift+1);
-   double close2=iClose(_Symbol,InpSignalTF,shift+1);
-   return BearishCandle(shift) && (close1<low2 || close1<close2);
+   return BearishCandle(shift);
 }
 bool SessionAllowed()
 {
@@ -202,7 +200,7 @@ bool MarketFiltersOK(double atr)
    {g_filterState="TRADING DISABLED"; return false;}
    if(CurrentSpreadPoints()>InpMaxSpreadPoints) {g_filterState="SPREAD"; return false;}
    double atrPts=atr/Pt();
-   if(atrPts<InpMinATRPoints || atrPts>InpMaxATRPoints) {g_filterState="ATR"; return false;}
+   if((InpMinATRPoints>0 && atrPts<InpMinATRPoints) || atrPts>InpMaxATRPoints) {g_filterState="ATR"; return false;}
    if(!SessionAllowed()) {g_filterState="SESSION"; return false;}
    if(CalendarNewsBlocked()) {g_filterState="HIGH IMPACT NEWS"; return false;}
    g_filterState="OK"; return true;
@@ -275,7 +273,7 @@ bool OpenTrade(ENUM_ORDER_TYPE type)
    double entry=(type==ORDER_TYPE_BUY?tick.ask:tick.bid);
    double sl=0; if(!ValidInitialSL(type,entry,sl)) return false;
    double lots=CalculateLots(type,entry,sl);
-   if(lots<=0) return false;
+   if(lots<=0) { g_blockReason="حجم اللوت/حد المخاطرة/الهامش لا يسمح"; Print("NORO: skip entry - volume/risk/margin check failed"); return false; }
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpSlippagePoints);
    trade.SetTypeFillingBySymbol(_Symbol);
@@ -283,10 +281,14 @@ bool OpenTrade(ENUM_ORDER_TYPE type)
    if(type==ORDER_TYPE_BUY) ok=trade.Buy(lots,_Symbol,0,sl,0,"NORO AI BUY");
    else ok=trade.Sell(lots,_Symbol,0,sl,0,"NORO AI SELL");
    if(!ok)
+   {
+      g_blockReason="رفض الوسيط: "+trade.ResultRetcodeDescription();
       Print("NORO entry failed: ",trade.ResultRetcode()," ",trade.ResultRetcodeDescription());
+   }
    else
    {
       g_todayEntries++;
+      g_blockReason="تم إرسال الصفقة بنجاح";
       g_lastEntryBar=iTime(_Symbol,InpSignalTF,0);
    }
    return ok;
@@ -414,13 +416,13 @@ void CreateDashboard()
    ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,10);
    ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,20);
    ObjectSetInteger(0,bg,OBJPROP_XSIZE,300);
-   ObjectSetInteger(0,bg,OBJPROP_YSIZE,390);
+   ObjectSetInteger(0,bg,OBJPROP_YSIZE,430);
    ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,C'14,20,32');
    ObjectSetInteger(0,bg,OBJPROP_COLOR,clrSlateGray);
    ObjectSetInteger(0,bg,OBJPROP_BACK,false);
-   MakeButton("TOGGLE","PAUSE / RESUME",20,390,130,22);
-   MakeButton("CLOSE","CLOSE EA TRADES",160,390,140,22);
-   MakeButton("HIDE","HIDE PANEL",20,416,130,22);
+   MakeButton("TOGGLE","تشغيل / إيقاف",20,390,130,22);
+   MakeButton("CLOSE","إغلاق صفقات الروبوت",160,390,140,22);
+   MakeButton("HIDE","إخفاء اللوحة",20,416,130,22);
 }
 void DeleteDashboard()
 {
@@ -447,46 +449,55 @@ void UpdateDashboard()
    double dd=(g_peakEquity>0?(g_peakEquity-eq)/g_peakEquity*100:0);
    if(dd>g_maxDD) g_maxDD=dd;
    int y=30;
-   SetLabel("TITLE","NORO AI GOLD SCALPER",22,y,clrDeepSkyBlue,11); y+=24;
-   SetLabel("STATUS","EA: "+string(g_enabled?"ACTIVE":"PAUSED")+" | "+_Symbol,22,y,g_enabled?clrLime:clrOrange); y+=19;
-   SetLabel("TF","Timeframe: "+EnumToString(_Period)+" | Signal: "+EnumToString(InpSignalTF),22,y,clrWhite); y+=19;
-   SetLabel("TREND","Market trend: "+g_trend,22,y,clrAqua); y+=19;
-   SetLabel("TRADES","Today entries: "+IntegerToString(g_todayEntries)+" / "+IntegerToString(InpTargetTradesPerDay),22,y,clrWhite); y+=19;
-   SetLabel("POSITIONS","Open: "+IntegerToString(all)+" (BUY "+IntegerToString(b)+" / SELL "+IntegerToString(s)+")",22,y,clrWhite); y+=19;
-   SetLabel("DAYPROFIT","Daily profit: "+Money(g_dayProfit),22,y,clrLime); y+=19;
-   SetLabel("DAYLOSS","Daily loss: "+Money(g_dayLoss),22,y,clrTomato); y+=19;
-   SetLabel("DAYNET","Daily net: "+Money(g_dayNet),22,y,g_dayNet>=0?clrLime:clrTomato); y+=19;
-   SetLabel("WINRATE","Win rate: "+DoubleToString(WinRate(),1)+"% ("+IntegerToString(g_win)+"W/"+IntegerToString(g_loss)+"L)",22,y,clrWhite); y+=19;
-   SetLabel("VOLUME","Open lots: "+DoubleToString(TotalLots(),2),22,y,clrWhite); y+=19;
-   SetLabel("SPREAD","Spread: "+DoubleToString(CurrentSpreadPoints(),1)+" points",22,y,clrWhite); y+=19;
-   SetLabel("RSI","RSI(14): "+g_rsiState+" | MACD: "+g_macdState,22,y,clrWhite); y+=19;
-   SetLabel("TRAIL","Trailing: start "+IntegerToString(InpTrailStartPoints)+" / gap "+IntegerToString(InpTrailDistancePoints),22,y,clrWhite); y+=19;
-   SetLabel("BALANCE","Balance: "+Money(AccountInfoDouble(ACCOUNT_BALANCE)),22,y,clrWhite); y+=19;
-   SetLabel("EQUITY","Equity: "+Money(eq)+" | DD: "+DoubleToString(g_maxDD,2)+"%",22,y,clrWhite); y+=19;
-   SetLabel("FILTER","Filters: "+g_filterState,22,y,g_filterState=="OK"?clrLime:clrOrange); y+=19;
-   SetLabel("PF","Avg W/L: "+Money(g_avgWin)+"/"+Money(g_avgLoss)+" | PF: "+DoubleToString(g_profitFactor,2),22,y,clrWhite);
+   SetLabel("TITLE","نورُو - سكالبينغ الذهب",22,y,clrDeepSkyBlue,11); y+=24;
+   SetLabel("STATUS","حالة الروبوت: "+string(g_enabled?"يعمل":"متوقف")+" | "+_Symbol,22,y,g_enabled?clrLime:clrOrange); y+=19;
+   SetLabel("TF","الفريم: "+EnumToString(_Period)+" | الإشارة: "+EnumToString(InpSignalTF),22,y,clrWhite); y+=19;
+   SetLabel("TREND","اتجاه السوق: "+(g_trend=="BUY"?"شراء":(g_trend=="SELL"?"بيع":"محايد")),22,y,clrAqua); y+=19;
+   SetLabel("TRADES","صفقات اليوم: "+IntegerToString(g_todayEntries)+" / "+IntegerToString(InpTargetTradesPerDay),22,y,clrWhite); y+=19;
+   SetLabel("POSITIONS","المفتوحة: "+IntegerToString(all)+" (شراء "+IntegerToString(b)+" / بيع "+IntegerToString(s)+")",22,y,clrWhite); y+=19;
+   SetLabel("DAYPROFIT","الربح اليومي: "+Money(g_dayProfit),22,y,clrLime); y+=19;
+   SetLabel("DAYLOSS","الخسارة اليومية: "+Money(g_dayLoss),22,y,clrTomato); y+=19;
+   SetLabel("DAYNET","الصافي اليومي: "+Money(g_dayNet),22,y,g_dayNet>=0?clrLime:clrTomato); y+=19;
+   SetLabel("WINRATE","نسبة النجاح: "+DoubleToString(WinRate(),1)+"% ("+IntegerToString(g_win)+" رابحة / "+IntegerToString(g_loss)+" خاسرة)",22,y,clrWhite); y+=19;
+   SetLabel("VOLUME","إجمالي اللوت: "+DoubleToString(TotalLots(),2),22,y,clrWhite); y+=19;
+   SetLabel("SPREAD","السبريد: "+DoubleToString(CurrentSpreadPoints(),1)+" نقطة",22,y,clrWhite); y+=19;
+   SetLabel("RSI","RSI: "+g_rsiState+" | MACD: "+(g_macdState=="BULLISH"?"صاعد":(g_macdState=="BEARISH"?"هابط":"محايد")),22,y,clrWhite); y+=19;
+   SetLabel("TRAIL","التريلينغ: بداية "+IntegerToString(InpTrailStartPoints)+" / مسافة "+IntegerToString(InpTrailDistancePoints),22,y,clrWhite); y+=19;
+   SetLabel("BALANCE","الرصيد: "+Money(AccountInfoDouble(ACCOUNT_BALANCE)),22,y,clrWhite); y+=19;
+   SetLabel("EQUITY","الإكويتي: "+Money(eq)+" | التراجع: "+DoubleToString(g_maxDD,2)+"%",22,y,clrWhite); y+=19;
+   SetLabel("FILTER","فلتر السوق: "+g_filterState,22,y,g_filterState=="OK"?clrLime:clrOrange); y+=19;
+   SetLabel("PF","متوسط ربح/خسارة: "+Money(g_avgWin)+"/"+Money(g_avgLoss)+" | PF: "+DoubleToString(g_profitFactor,2),22,y,clrWhite); y+=19;
+   SetLabel("BLOCK","سبب عدم الدخول: "+g_blockReason,22,y,clrYellow,8);
    ChartRedraw(0);
 }
 void EvaluateAndTrade()
 {
-   if(!g_enabled || !NewBar()) return;
-   if(InpOnlyGoldSymbols && !IsGoldSymbol()) return;
-   if(_Period!=InpSignalTF) {g_filterState="ATTACH TO M5"; return;}
-   if(CountPositions()>=InpMaxOpenPositions) return;
-   if(g_lastEntryBar==iTime(_Symbol,InpSignalTF,0)) return;
+   if(!g_enabled) { g_blockReason="الروبوت متوقف مؤقتاً"; return; }
+   if(InpOnlyGoldSymbols && !IsGoldSymbol()) { g_blockReason="رمز غير مطابق للذهب"; return; }
+   if(_Period!=InpSignalTF) {g_filterState="افتح شارت M5"; g_blockReason="الفريم الحالي غير صحيح"; return;}
+   if(Bars(_Symbol,InpSignalTF)<100) { g_blockReason="لا توجد شموع كافية"; return; }
+   if(CountPositions()>=InpMaxOpenPositions) { g_blockReason="وصل الحد الأقصى للصفقات"; return; }
+   datetime now=TimeTradeServer();
+   if(InpSignalCooldownSeconds>0 && now-g_lastAttemptTime<InpSignalCooldownSeconds) return;
+   if(InpAllowOneEntryPerBar && g_lastEntryBar==iTime(_Symbol,InpSignalTF,0))
+   { g_blockReason="تم الدخول سابقاً في هذه الشمعة"; return; }
+
    double e9,e21,e50,rsi,macd,sig,atr;
-   if(!ReadIndicators(1,e9,e21,e50,rsi,macd,sig,atr)) return;
-   if(!MarketFiltersOK(atr)) return;
-   // Use the last fully closed candle to avoid intrabar indicator repaint.
+   if(!ReadIndicators(1,e9,e21,e50,rsi,macd,sig,atr))
+   { g_blockReason="بانتظار اكتمال بيانات المؤشرات"; return; }
+   if(!MarketFiltersOK(atr))
+   { g_blockReason="فلتر السوق منع الدخول: "+g_filterState; return; }
+
    double close=iClose(_Symbol,InpSignalTF,1);
    bool buyTrend=(e9>e21 && e21>e50 && close>e50);
    bool sellTrend=(e9<e21 && e21<e50 && close<e50);
-   bool buyRSI=(rsi>=InpBuyRSIMin && rsi<75);
-   bool sellRSI=(rsi<=InpSellRSIMax && rsi>25);
+   bool buyRSI=(rsi>=InpBuyRSIMin && rsi<78);
+   bool sellRSI=(rsi<=InpSellRSIMax && rsi>22);
    bool buyMACD=(macd>sig);
    bool sellMACD=(macd<sig);
    bool buyPA=BullishPriceAction(1);
    bool sellPA=BearishPriceAction(1);
+
    double buyScore=0,sellScore=0;
    if(buyTrend) buyScore+=2;
    if(buyRSI) buyScore+=1;
@@ -498,10 +509,21 @@ void EvaluateAndTrade()
    if(sellMACD) sellScore+=1;
    if(sellPA) sellScore+=2;
    if(close<iLow(_Symbol,InpSignalTF,2)) sellScore+=1;
+
+   g_blockReason="لا توجد إشارة مكتملة | شراء: "+DoubleToString(buyScore,0)+
+                 "/7 بيع: "+DoubleToString(sellScore,0)+"/7";
    if(buyScore>=InpMinSignalScore && buyScore>sellScore &&
-      CountPositions(0)<InpMaxPositionsPerSide) OpenTrade(ORDER_TYPE_BUY);
+      CountPositions(0)<InpMaxPositionsPerSide)
+   {
+      g_lastAttemptTime=now;
+      OpenTrade(ORDER_TYPE_BUY);
+   }
    else if(sellScore>=InpMinSignalScore && sellScore>buyScore &&
-           CountPositions(1)<InpMaxPositionsPerSide) OpenTrade(ORDER_TYPE_SELL);
+           CountPositions(1)<InpMaxPositionsPerSide)
+   {
+      g_lastAttemptTime=now;
+      OpenTrade(ORDER_TYPE_SELL);
+   }
 }
 void RestoreState()
 {
@@ -526,7 +548,9 @@ int OnInit()
       InpMaxOpenPositions<1 || InpTrailDistancePoints<1)
       return INIT_PARAMETERS_INCORRECT;
    if(InpOnlyGoldSymbols && !IsGoldSymbol())
-      Print("Warning: this EA is intended for XAUUSD/GOLD symbols.");
+   {
+      Print("NORO: الرمز غير معروف كذهب. عطّل خيار InpOnlyGoldSymbols أو استخدم رمز الذهب لدى وسيطك.");
+   }
    hFast=iMA(_Symbol,InpSignalTF,InpFastEMA,0,MODE_EMA,PRICE_CLOSE);
    hMedium=iMA(_Symbol,InpSignalTF,InpMediumEMA,0,MODE_EMA,PRICE_CLOSE);
    hSlow=iMA(_Symbol,InpSignalTF,InpSlowEMA,0,MODE_EMA,PRICE_CLOSE);
@@ -542,6 +566,9 @@ int OnInit()
    CreateDashboard();
    EventSetTimer(1);
    g_status="READY";
+   g_filterState="بانتظار أول تقييم";
+   Print("NORO AI GOLD SCALPER جاهز. الرمز=",_Symbol," الفريم=",EnumToString(InpSignalTF),
+         " | تأكد من تفعيل Algo Trading والسماح بالتداول الآلي.");
    return INIT_SUCCEEDED;
 }
 void OnDeinit(const int reason)
@@ -584,7 +611,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    {
       g_panelVisible=false;
       DeleteDashboard();
-      MakeButton("SHOW","SHOW PANEL",20,20,110,24);
+      MakeButton("SHOW","إظهار اللوحة",20,20,110,24);
    }
    else if(sparam==PREFIX+"SHOW")
    {
