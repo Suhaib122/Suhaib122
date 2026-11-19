@@ -1,0 +1,161 @@
+//@version=6
+strategy("NORO AI PRO – SCALPING ELITE BACKTEST", shorttitle="NORO AI PRO BT", overlay=true, initial_capital=10000, currency=currency.USD, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.04, slippage=2, process_orders_on_close=true, calc_on_order_fills=true)
+
+//=============================================================================
+// Separate test strategy using the same core rule-based confluence approach.
+// TradingView Strategy Tester supplies net profit, drawdown, win rate, PF,
+// trades, and long/short statistics. No invented or hard-coded performance.
+//=============================================================================
+
+string GM = "01 • الإشارات"
+string mode = input.string("FAST MODE", "وضع التشغيل", options=["FAST MODE", "PRECISION MODE"], group=GM)
+int minScore = input.int(55, "الحد الأدنى للنقاط", minval=50, maxval=95, group=GM)
+bool useMTF = input.bool(true, "فلتر الفريم الأعلى", group=GM)
+string htf = input.timeframe("60", "الفريم الأعلى", group=GM)
+int pivotLen = input.int(5, "Pivot Structure", minval=2, maxval=30, group=GM)
+int minBarsGap = input.int(3, "الحد الأدنى بين الإشارات", minval=0, maxval=100, group=GM)
+
+string GR = "02 • المخاطر"
+int atrLen = input.int(14, "ATR", minval=1, group=GR)
+float slAtrMult = input.float(1.2, "SL ATR", minval=0.1, step=0.1, group=GR)
+float tp1R = input.float(1.0, "هدف R", minval=0.1, step=0.1, group=GR)
+bool useSwingSL = input.bool(true, "دمج Swing في الوقف", group=GR)
+int swingBars = input.int(10, "مدى Swing", minval=2, maxval=100, group=GR)
+float riskPct = input.float(1.0, "المخاطرة النظرية % من رأس المال", minval=0.1, maxval=10, step=0.1, group=GR)
+bool allowLong = input.bool(true, "السماح بالشراء", group=GR)
+bool allowShort = input.bool(true, "السماح بالبيع", group=GR)
+
+string GDISPLAY = "03 • العرض"
+bool showMA = input.bool(true, "إظهار المتوسطات", group=GDISPLAY)
+bool showDashboard = input.bool(true, "إظهار لوحة النتائج", group=GDISPLAY)
+
+// Core indicators
+float ema9 = ta.ema(close, 9)
+float ema21 = ta.ema(close, 21)
+float ema50 = ta.ema(close, 50)
+float rsi = ta.rsi(close, 14)
+[macdLine, macdSignal, macdHist] = ta.macd(close, 12, 26, 9)
+[stLine, stDir] = ta.supertrend(3.0, 10)
+float atr = ta.atr(atrLen)
+float vwapValue = ta.vwap(hlc3)
+float volMA = ta.sma(volume, 20)
+
+float htfClose = request.security(syminfo.tickerid, htf, close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+float htfEMA = request.security(syminfo.tickerid, htf, ta.ema(close, 50)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool htfUp = htfClose > htfEMA
+bool htfDn = htfClose < htfEMA
+
+float ph = ta.pivothigh(high, pivotLen, pivotLen)
+float pl = ta.pivotlow(low, pivotLen, pivotLen)
+var float lastPH = na
+var float lastPL = na
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+bool bosUp = not na(lastPH) and ta.crossover(close, lastPH)
+bool bosDn = not na(lastPL) and ta.crossunder(close, lastPL)
+bool sweepLow = not na(lastPL) and low < lastPL and close > lastPL
+bool sweepHigh = not na(lastPH) and high > lastPH and close < lastPH
+
+bool trendUp = ema9 > ema21 and ema21 > ema50
+bool trendDn = ema9 < ema21 and ema21 < ema50
+bool volOK = na(volume) or na(volMA) or volume > volMA
+bool vwapUp = na(vwapValue) or close > vwapValue
+bool vwapDn = na(vwapValue) or close < vwapValue
+
+int longScore = 0
+int shortScore = 0
+longScore += trendUp ? 18 : ema9 > ema21 ? 9 : 0
+shortScore += trendDn ? 18 : ema9 < ema21 ? 9 : 0
+longScore += rsi > 52 and rsi > rsi[1] ? 12 : rsi > 50 ? 5 : 0
+shortScore += rsi < 48 and rsi < rsi[1] ? 12 : rsi < 50 ? 5 : 0
+longScore += macdLine > macdSignal and macdHist > macdHist[1] ? 12 : 0
+shortScore += macdLine < macdSignal and macdHist < macdHist[1] ? 12 : 0
+longScore += stDir < 0 ? 8 : 0
+shortScore += stDir > 0 ? 8 : 0
+longScore += vwapUp ? 7 : 0
+shortScore += vwapDn ? 7 : 0
+longScore += volOK and close > open ? 5 : 0
+shortScore += volOK and close < open ? 5 : 0
+longScore += bosUp ? 12 : sweepLow ? 10 : 0
+shortScore += bosDn ? 12 : sweepHigh ? 10 : 0
+longScore += useMTF and htfUp ? 8 : not useMTF ? 0 : 0
+shortScore += useMTF and htfDn ? 8 : not useMTF ? 0 : 0
+int threshold = mode == "FAST MODE" ? minScore : math.max(minScore, 70)
+bool longRaw = longScore >= threshold and longScore > shortScore and (not useMTF or htfUp)
+bool shortRaw = shortScore >= threshold and shortScore > longScore and (not useMTF or htfDn)
+
+var int lastSignalBar = na
+bool gapOK = na(lastSignalBar) or bar_index - lastSignalBar >= minBarsGap
+bool longSignal = barstate.isconfirmed and longRaw and gapOK
+bool shortSignal = barstate.isconfirmed and shortRaw and gapOK
+if longSignal or shortSignal
+    lastSignalBar := bar_index
+
+// Persistent stop/target snapshots are set on signal and sent to strategy exits.
+var float longStop = na
+var float longTarget = na
+var float shortStop = na
+var float shortTarget = na
+var float activeRisk = na
+
+if longSignal and allowLong and strategy.position_size <= 0
+    float atrDistance = math.max(atr * slAtrMult, syminfo.mintick)
+    float swingLow = ta.lowest(low, swingBars)
+    longStop := useSwingSL ? math.min(close - atrDistance, swingLow) : close - atrDistance
+    activeRisk := math.max(close - longStop, syminfo.mintick)
+    longTarget := close + activeRisk * tp1R
+    shortStop := na
+    shortTarget := na
+    float riskCash = strategy.equity * riskPct / 100.0
+    float qty = riskCash / (activeRisk * syminfo.pointvalue)
+    strategy.entry("LONG", strategy.long, qty=qty, alert_message="NORO BUY")
+    strategy.exit("LONG EXIT", "LONG", stop=longStop, limit=longTarget, alert_message="NORO LONG EXIT")
+
+if shortSignal and allowShort and strategy.position_size >= 0
+    float atrDistance = math.max(atr * slAtrMult, syminfo.mintick)
+    float swingHigh = ta.highest(high, swingBars)
+    shortStop := useSwingSL ? math.max(close + atrDistance, swingHigh) : close + atrDistance
+    activeRisk := math.max(shortStop - close, syminfo.mintick)
+    shortTarget := close - activeRisk * tp1R
+    longStop := na
+    longTarget := na
+    float riskCash = strategy.equity * riskPct / 100.0
+    float qty = riskCash / (activeRisk * syminfo.pointvalue)
+    strategy.entry("SHORT", strategy.short, qty=qty, alert_message="NORO SELL")
+    strategy.exit("SHORT EXIT", "SHORT", stop=shortStop, limit=shortTarget, alert_message="NORO SHORT EXIT")
+
+// Reissue exits on every bar so the frozen levels remain active.
+if strategy.position_size > 0 and not na(longStop) and not na(longTarget)
+    strategy.exit("LONG EXIT", "LONG", stop=longStop, limit=longTarget)
+if strategy.position_size < 0 and not na(shortStop) and not na(shortTarget)
+    strategy.exit("SHORT EXIT", "SHORT", stop=shortStop, limit=shortTarget)
+
+plot(showMA ? ema9 : na, "EMA 9", color=color.aqua)
+plot(showMA ? ema21 : na, "EMA 21", color=color.orange)
+plot(showMA ? ema50 : na, "EMA 50", color=color.blue)
+plot(strategy.position_size > 0 ? longStop : strategy.position_size < 0 ? shortStop : na, "Stop", color=color.red, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 ? longTarget : strategy.position_size < 0 ? shortTarget : na, "Target", color=color.lime, style=plot.style_linebr, linewidth=2)
+plotshape(longSignal, "BUY", shape.labelup, location.belowbar, color=color.green, text="BUY", textcolor=color.white, size=size.tiny)
+plotshape(shortSignal, "SELL", shape.labeldown, location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.tiny)
+
+// Performance values below come from TradingView's Strategy Tester engine.
+var table panel = table.new(position.top_right, 2, 8, border_width=1)
+if barstate.islast and showDashboard
+    table.cell(panel, 0, 0, "NORO BACKTEST", bgcolor=color.rgb(20, 35, 54), text_color=color.white)
+    table.cell(panel, 1, 0, syminfo.ticker + " • " + timeframe.period, bgcolor=color.rgb(20, 35, 54), text_color=color.aqua)
+    table.cell(panel, 0, 1, "صافي الربح", text_color=color.silver)
+    table.cell(panel, 1, 1, str.tostring(strategy.netprofit, "#.##"), text_color=strategy.netprofit >= 0 ? color.lime : color.red)
+    table.cell(panel, 0, 2, "Win Rate", text_color=color.silver)
+    table.cell(panel, 1, 2, strategy.closedtrades > 0 ? str.tostring(strategy.wintrades / strategy.closedtrades * 100, "#.0") + "%" : "—", text_color=color.white)
+    table.cell(panel, 0, 3, "Profit Factor", text_color=color.silver)
+    table.cell(panel, 1, 3, str.tostring(strategy.grossloss != 0 ? strategy.grossprofit / math.abs(strategy.grossloss) : na, "#.00"), text_color=color.white)
+    table.cell(panel, 0, 4, "Max Drawdown", text_color=color.silver)
+    table.cell(panel, 1, 4, str.tostring(strategy.max_drawdown, "#.##"), text_color=color.white)
+    table.cell(panel, 0, 5, "Closed Trades", text_color=color.silver)
+    table.cell(panel, 1, 5, str.tostring(strategy.closedtrades), text_color=color.white)
+    table.cell(panel, 0, 6, "Long / Short", text_color=color.silver)
+    table.cell(panel, 1, 6, str.tostring(strategy.losstrades + strategy.wintrades), text_color=color.white)
+    table.cell(panel, 0, 7, "Risk / Trade", text_color=color.silver)
+    table.cell(panel, 1, 7, str.tostring(riskPct, "#.0") + "% (تقريبي)", text_color=color.yellow)
