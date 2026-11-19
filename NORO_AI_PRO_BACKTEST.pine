@@ -109,9 +109,11 @@ if longSignal and allowLong and strategy.position_size <= 0
     shortStop := na
     shortTarget := na
     float riskCash = strategy.equity * riskPct / 100.0
-    float qty = riskCash / (activeRisk * syminfo.pointvalue)
-    strategy.entry("LONG", strategy.long, qty=qty, alert_message="NORO BUY")
-    strategy.exit("LONG EXIT", "LONG", stop=longStop, limit=longTarget, alert_message="NORO LONG EXIT")
+    float riskPerUnitAccount = strategy.convert_to_account(activeRisk * syminfo.pointvalue)
+    float qty = not na(riskPerUnitAccount) and riskPerUnitAccount > 0 ? riskCash / riskPerUnitAccount : na
+    if not na(qty) and qty > 0
+        strategy.entry("LONG", strategy.long, qty=qty, alert_message="NORO BUY")
+        strategy.exit("LONG EXIT", "LONG", stop=longStop, limit=longTarget, alert_message="NORO LONG EXIT")
 
 if shortSignal and allowShort and strategy.position_size >= 0
     float atrDistance = math.max(atr * slAtrMult, syminfo.mintick)
@@ -122,9 +124,11 @@ if shortSignal and allowShort and strategy.position_size >= 0
     longStop := na
     longTarget := na
     float riskCash = strategy.equity * riskPct / 100.0
-    float qty = riskCash / (activeRisk * syminfo.pointvalue)
-    strategy.entry("SHORT", strategy.short, qty=qty, alert_message="NORO SELL")
-    strategy.exit("SHORT EXIT", "SHORT", stop=shortStop, limit=shortTarget, alert_message="NORO SHORT EXIT")
+    float riskPerUnitAccount = strategy.convert_to_account(activeRisk * syminfo.pointvalue)
+    float qty = not na(riskPerUnitAccount) and riskPerUnitAccount > 0 ? riskCash / riskPerUnitAccount : na
+    if not na(qty) and qty > 0
+        strategy.entry("SHORT", strategy.short, qty=qty, alert_message="NORO SELL")
+        strategy.exit("SHORT EXIT", "SHORT", stop=shortStop, limit=shortTarget, alert_message="NORO SHORT EXIT")
 
 // Reissue exits on every bar so the frozen levels remain active.
 if strategy.position_size > 0 and not na(longStop) and not na(longTarget)
