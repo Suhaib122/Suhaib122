@@ -1,154 +1,173 @@
 //@version=6
-indicator("NORO AI PRO – SCALPING ELITE", shorttitle="NORO AI PRO", overlay=true, max_labels_count=300, max_lines_count=300, max_boxes_count=100)
+indicator("NORO AI PRO – SCALPING ELITE | CLEAN", shorttitle="NORO AI PRO", overlay=true, max_lines_count=100, max_labels_count=50, max_boxes_count=20, max_bars_back=1000)
 
 //=============================================================================
-// NORO AI PRO — rule-based confluence engine. No external AI model is used.
-// Confirmed-bar mode is non-repainting for chart-timeframe signals.
-// Higher timeframe filters use the last completed HTF candle.
+// NORO AI PRO — CLEAN SINGLE-CHART EDITION
+// One indicator declaration, one dashboard, one active trade-level group.
+// Signals and trade-state transitions are confirmed at bar close.
+// HTF values use the previous completed HTF candle to avoid lookahead bias.
 //=============================================================================
 
 //------------------------------- Inputs -------------------------------------
-string G_MODE = "01 • محرك الإشارات"
-string mode = input.string("FAST MODE", "وضع التشغيل", options=["FAST MODE", "PRECISION MODE"], group=G_MODE)
-int minScore = input.int(55, "الحد الأدنى للنقاط", minval=50, maxval=95, group=G_MODE)
-bool confirmedOnly = input.bool(true, "تأكيد الإشارة عند إغلاق الشمعة", group=G_MODE)
-bool earlySignals = input.bool(false, "إظهار إشارات مبكرة (مؤقتة)", group=G_MODE)
-int minBarsGap = input.int(3, "الحد الأدنى بين الإشارات (شموع)", minval=0, maxval=100, group=G_MODE)
-int cooldown = input.int(2, "فترة التهدئة بعد الإشارة", minval=0, maxval=100, group=G_MODE)
-bool confirmOpposite = input.bool(false, "تأكيد إضافي عند عكس اتجاه آخر إشارة", group=G_MODE)
-bool showScoreLabels = input.bool(true, "إظهار نقاط الإشارة", group=G_MODE)
+string G_MODE = "01 • الإشارات"
+string mode = input.string("FAST MODE", "وضع الإشارات", options=["FAST MODE", "PRECISION MODE"], group=G_MODE)
+int minScore = input.int(55, "الحد الأدنى لقوة الإشارة", minval=50, maxval=95, group=G_MODE)
+int minBarsBetween = input.int(3, "أقل عدد شموع بين الإشارات", minval=0, maxval=100, group=G_MODE)
+int cooldownBars = input.int(2, "فترة التهدئة", minval=0, maxval=100, group=G_MODE)
+bool confirmReversal = input.bool(true, "تأكيد إضافي عند عكس الاتجاه", group=G_MODE)
+bool useMTFFilter = input.bool(true, "استخدام فلتر H1 / H4", group=G_MODE)
 
-string G_TREND = "02 • الاتجاه والزخم"
-int emaFastLen = input.int(9, "EMA سريع", minval=1, group=G_TREND)
-int emaMidLen = input.int(21, "EMA متوسط", minval=1, group=G_TREND)
-int emaSlowLen = input.int(50, "EMA بطيء", minval=1, group=G_TREND)
-int rsiLen = input.int(14, "RSI", minval=2, group=G_TREND)
-int macdFast = input.int(12, "MACD سريع", minval=1, group=G_TREND)
-int macdSlow = input.int(26, "MACD بطيء", minval=2, group=G_TREND)
-int macdSig = input.int(9, "MACD Signal", minval=1, group=G_TREND)
-int stAtrLen = input.int(10, "Supertrend ATR", minval=1, group=G_TREND)
-float stFactor = input.float(3.0, "Supertrend Factor", minval=0.1, step=0.1, group=G_TREND)
-bool useVWAP = input.bool(true, "استخدام VWAP (حيث يتوفر)", group=G_TREND)
-bool useVolume = input.bool(true, "تأكيد الحجم", group=G_TREND)
-int volLen = input.int(20, "متوسط الحجم", minval=1, group=G_TREND)
+string G_CORE = "02 • التحليل الفني"
+int emaFastLen = input.int(9, "EMA سريع", minval=1, group=G_CORE)
+int emaMidLen = input.int(21, "EMA متوسط", minval=1, group=G_CORE)
+int emaSlowLen = input.int(50, "EMA بطيء", minval=1, group=G_CORE)
+int rsiLen = input.int(14, "RSI", minval=2, group=G_CORE)
+int adxLen = input.int(14, "DI Length", minval=2, group=G_CORE)
+int adxSmooth = input.int(14, "ADX Smoothing", minval=2, group=G_CORE)
+float adxFloor = input.float(18.0, "حد ADX للاتجاه", minval=5, step=0.5, group=G_CORE)
+bool useVWAP = input.bool(true, "استخدام VWAP عند توفره", group=G_CORE)
+bool useVolume = input.bool(true, "تأكيد الحجم عند توفره", group=G_CORE)
+int volumeLen = input.int(20, "متوسط الحجم", minval=1, group=G_CORE)
 
-string G_MTF = "03 • الفريمات المتعددة"
-bool useMTF = input.bool(true, "تفعيل فلتر الاتجاه الأعلى", group=G_MTF)
-string htf = input.timeframe("60", "الفريم الأعلى", group=G_MTF)
-int mtfEmaLen = input.int(50, "EMA الفريم الأعلى", minval=1, group=G_MTF)
+string G_SMC = "03 • الهيكل والسيولة SMC"
+int pivotLen = input.int(5, "Pivot Length", minval=2, maxval=30, group=G_SMC)
+bool useStructureScore = input.bool(true, "احتساب BOS / CHoCH", group=G_SMC)
+bool useSweepScore = input.bool(true, "احتساب Liquidity Sweep", group=G_SMC)
+bool showLiquidity = input.bool(false, "إظهار خطوط السيولة", group=G_SMC)
+bool showSMCZones = input.bool(false, "إظهار آخر مناطق FVG / OB", group=G_SMC)
+float equalLevelAtr = input.float(0.12, "سماحية Equal High / Low (ATR)", minval=0.01, maxval=1, step=0.01, group=G_SMC)
 
-string G_SMC = "04 • SMC / ICT مبسط"
-bool useStructure = input.bool(true, "احتساب BOS / CHoCH", group=G_SMC)
-bool showStructure = input.bool(true, "رسم BOS / CHoCH", group=G_SMC)
-int pivotLen = input.int(5, "طول Pivot للهيكل", minval=2, maxval=30, group=G_SMC)
-bool useSweeps = input.bool(true, "احتساب سحب السيولة", group=G_SMC)
-bool showSweeps = input.bool(true, "رسم سحب السيولة", group=G_SMC)
-bool showFVG = input.bool(false, "رسم آخر فجوات FVG", group=G_SMC)
-bool showOB = input.bool(false, "رسم آخر Order Block مبسط", group=G_SMC)
-
-string G_RISK = "05 • الدخول والوقف والأهداف"
-int atrLen = input.int(14, "ATR", minval=1, group=G_RISK)
+string G_RISK = "04 • إدارة الصفقة"
+int atrLen = input.int(14, "ATR Length", minval=1, group=G_RISK)
 float slAtrMult = input.float(1.2, "وقف الخسارة ATR", minval=0.1, step=0.1, group=G_RISK)
 float tp1R = input.float(1.0, "TP1 (R)", minval=0.1, step=0.1, group=G_RISK)
 float tp2R = input.float(1.5, "TP2 (R)", minval=0.1, step=0.1, group=G_RISK)
 float tp3R = input.float(2.0, "TP3 (R)", minval=0.1, step=0.1, group=G_RISK)
-bool useSwingSL = input.bool(true, "دمج آخر Swing في الوقف", group=G_RISK)
-int swingSLBars = input.int(10, "مدى Swing للوقف", minval=2, maxval=100, group=G_RISK)
-bool breakEvenAfterTP1 = input.bool(false, "تحريك الوقف إلى الدخول بعد TP1", group=G_RISK)
-bool showTradeLevels = input.bool(true, "رسم مستويات الصفقة", group=G_RISK)
+bool useSwingStop = input.bool(true, "دمج Swing في وقف الخسارة", group=G_RISK)
+int swingStopBars = input.int(10, "مدى Swing للوقف", minval=2, maxval=100, group=G_RISK)
+bool moveToBEAfterTP1 = input.bool(false, "تحريك الوقف إلى الدخول بعد TP1", group=G_RISK)
+bool showTradeLines = input.bool(true, "إظهار خطوط ENTRY / SL / TP", group=G_RISK)
+bool keepPreviousTrades = input.bool(false, "الاحتفاظ بخطوط الصفقات السابقة", group=G_RISK)
+int maxArchivedTrades = input.int(3, "عدد الصفقات السابقة المحفوظة", minval=1, maxval=5, group=G_RISK)
 
-string G_UI = "06 • لوحة المعلومات"
-bool showDashboard = input.bool(true, "إظهار اللوحة العربية", group=G_UI)
-string dashPosition = input.string("أعلى اليمين", "موقع اللوحة", options=["أعلى اليمين", "أعلى اليسار", "أسفل اليمين", "أسفل اليسار"], group=G_UI)
-bool showEMA = input.bool(true, "إظهار المتوسطات", group=G_UI)
-bool cleanMode = input.bool(false, "وضع الشارت النظيف", group=G_UI)
+string G_VISUAL = "05 • المظهر النظيف"
+bool cleanMode = input.bool(true, "CLEAN MODE", group=G_VISUAL)
+bool showSignals = input.bool(true, "إظهار أسهم BUY / SELL", group=G_VISUAL)
+string signalSizeInput = input.string("صغير", "حجم الأسهم والنص", options=["صغير", "متوسط", "كبير"], group=G_VISUAL)
+int tradeLineWidth = input.int(2, "سماكة خطوط الصفقة", minval=1, maxval=4, group=G_VISUAL)
+bool showMovingAverages = input.bool(false, "إظهار EMA على السعر", group=G_VISUAL)
+bool showSupertrend = input.bool(false, "إظهار Supertrend على السعر", group=G_VISUAL)
+bool showDashboard = input.bool(true, "إظهار لوحة المعلومات", group=G_VISUAL)
+string dashboardPosition = input.string("أعلى اليمين", "موقع اللوحة", options=["أعلى اليمين", "أعلى اليسار", "أسفل اليمين", "أسفل اليسار"], group=G_VISUAL)
+string dashboardSizeInput = input.string("صغير", "حجم خط اللوحة", options=["صغير", "متوسط", "كبير"], group=G_VISUAL)
 
-string G_ALERT = "07 • التنبيهات"
-bool enableDynamicAlerts = input.bool(true, "تفعيل رسائل alert() بصيغة JSON", group=G_ALERT)
+string G_ALERTS = "06 • التنبيهات"
+bool enableJsonAlerts = input.bool(true, "تفعيل تنبيهات JSON الديناميكية", group=G_ALERTS)
 
-//------------------------------- Core ---------------------------------------
+//------------------------------- Helpers ------------------------------------
+f_pos(string p) =>
+    p == "أعلى اليسار" ? position.top_left : p == "أسفل اليمين" ? position.bottom_right : p == "أسفل اليسار" ? position.bottom_left : position.top_right
+
+f_size(string s) =>
+    s == "كبير" ? size.normal : s == "متوسط" ? size.small : size.tiny
+
+f_price(float v) =>
+    na(v) ? "—" : str.tostring(v, format.mintick)
+
+f_direction(bool up, bool down) =>
+    up ? "صاعد" : down ? "هابط" : "عرضي"
+
+f_stateText(int s) =>
+    switch s
+        1 => "BUY ACTIVE"
+        2 => "SELL ACTIVE"
+        3 => "TP1 HIT"
+        4 => "TP2 HIT"
+        5 => "TP3 HIT"
+        6 => "STOP LOSS HIT"
+        => "WAITING"
+
+f_json(string eventName, int direction, float entry, float stop, float t1, float t2, float t3, int score) =>
+    "{\"system\":\"NORO AI PRO\",\"event\":\"" + eventName + "\",\"symbol\":\"" + syminfo.ticker + "\",\"timeframe\":\"" + timeframe.period + "\",\"direction\":\"" + (direction == 1 ? "BUY" : direction == -1 ? "SELL" : "NONE") + "\",\"entry\":" + (na(entry) ? "null" : str.tostring(entry, format.mintick)) + ",\"sl\":" + (na(stop) ? "null" : str.tostring(stop, format.mintick)) + ",\"tp1\":" + (na(t1) ? "null" : str.tostring(t1, format.mintick)) + ",\"tp2\":" + (na(t2) ? "null" : str.tostring(t2, format.mintick)) + ",\"tp3\":" + (na(t3) ? "null" : str.tostring(t3, format.mintick)) + ",\"score\":" + str.tostring(score) + "}"
+
+//------------------------------- Core engine --------------------------------
 float emaFast = ta.ema(close, emaFastLen)
 float emaMid = ta.ema(close, emaMidLen)
 float emaSlow = ta.ema(close, emaSlowLen)
-float rsi = ta.rsi(close, rsiLen)
-[macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
-[stLine, stDir] = ta.supertrend(stFactor, stAtrLen)
-float atr = ta.atr(atrLen)
+float rsiValue = ta.rsi(close, rsiLen)
+[macdLine, macdSignal, macdHist] = ta.macd(close, 12, 26, 9)
+[diPlus, diMinus, adxValue] = ta.dmi(adxLen, adxSmooth)
+[supertrendValue, supertrendDirection] = ta.supertrend(3.0, 10)
+float atrValue = ta.atr(atrLen)
 float vwapValue = ta.vwap(hlc3)
-float volSma = ta.sma(volume, volLen)
+float volumeAverage = ta.sma(volume, volumeLen)
 float bbBasis = ta.sma(close, 20)
-float bbDev = ta.stdev(close, 20) * 2.0
-float bbUpper = bbBasis + bbDev
-float bbLower = bbBasis - bbDev
+float bbDeviation = ta.stdev(close, 20) * 2.0
+float bbUpper = bbBasis + bbDeviation
+float bbLower = bbBasis - bbDeviation
 
-bool trendUp = emaFast > emaMid and emaMid > emaSlow
-bool trendDn = emaFast < emaMid and emaMid < emaSlow
-bool rsiUp = rsi > 52 and rsi > rsi[1]
-bool rsiDn = rsi < 48 and rsi < rsi[1]
-bool macdUp = macdLine > macdSignal and macdHist > macdHist[1]
-bool macdDn = macdLine < macdSignal and macdHist < macdHist[1]
-bool stUp = stDir < 0
-bool stDn = stDir > 0
-bool vwapUp = not useVWAP or na(vwapValue) or close > vwapValue
-bool vwapDn = not useVWAP or na(vwapValue) or close < vwapValue
-bool volOK = not useVolume or na(volume) or na(volSma) or volume > volSma
-bool candleUp = close > open and close > close[1]
-bool candleDn = close < open and close < close[1]
-bool bbBull = close > bbBasis and close[1] <= bbBasis[1]
-bool bbBear = close < bbBasis and close[1] >= bbBasis[1]
+bool emaBull = emaFast > emaMid and emaMid > emaSlow
+bool emaBear = emaFast < emaMid and emaMid < emaSlow
+bool rsiBull = rsiValue > 52 and rsiValue > rsiValue[1]
+bool rsiBear = rsiValue < 48 and rsiValue < rsiValue[1]
+bool macdBull = macdLine > macdSignal and macdHist > macdHist[1]
+bool macdBear = macdLine < macdSignal and macdHist < macdHist[1]
+bool supertrendBull = supertrendDirection < 0
+bool supertrendBear = supertrendDirection > 0
+bool vwapBull = not useVWAP or na(vwapValue) or close > vwapValue
+bool vwapBear = not useVWAP or na(vwapValue) or close < vwapValue
+bool volumeOK = not useVolume or na(volume) or na(volumeAverage) or volume > volumeAverage
+bool candleBull = close > open and close > close[1]
+bool candleBear = close < open and close < close[1]
+bool bbBull = close > bbBasis
+bool bbBear = close < bbBasis
+bool adxBull = adxValue >= adxFloor and diPlus > diMinus
+bool adxBear = adxValue >= adxFloor and diMinus > diPlus
 
-// Last completed higher-timeframe candle only; avoids HTF lookahead/repainting.
-float htfClose = request.security(syminfo.tickerid, htf, close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-float htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool mtfUp = htfClose > htfEma
-bool mtfDn = htfClose < htfEma
-bool mtfLongOK = not useMTF or mtfUp
-bool mtfShortOK = not useMTF or mtfDn
+// Last completed H1/H4 candles only. Offset [1] with lookahead_on is intentional.
+float h1Close = request.security(syminfo.tickerid, "60", close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+float h1Ema = request.security(syminfo.tickerid, "60", ta.ema(close, 50)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+float h4Close = request.security(syminfo.tickerid, "240", close[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+float h4Ema = request.security(syminfo.tickerid, "240", ta.ema(close, 50)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool h1Bull = h1Close > h1Ema
+bool h1Bear = h1Close < h1Ema
+bool h4Bull = h4Close > h4Ema
+bool h4Bear = h4Close < h4Ema
+bool mtfBullOK = not useMTFFilter or (mode == "FAST MODE" ? (h1Bull or h4Bull) : (h1Bull and h4Bull))
+bool mtfBearOK = not useMTFFilter or (mode == "FAST MODE" ? (h1Bear or h4Bear) : (h1Bear and h4Bear))
 
-// Eight timeframe snapshots. Each uses the last completed candle of that timeframe.
-bool tf1Up = request.security(syminfo.tickerid, "1", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf1Dn = request.security(syminfo.tickerid, "1", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf3Up = request.security(syminfo.tickerid, "3", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf3Dn = request.security(syminfo.tickerid, "3", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf5Up = request.security(syminfo.tickerid, "5", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf5Dn = request.security(syminfo.tickerid, "5", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf15Up = request.security(syminfo.tickerid, "15", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf15Dn = request.security(syminfo.tickerid, "15", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf30Up = request.security(syminfo.tickerid, "30", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf30Dn = request.security(syminfo.tickerid, "30", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf60Up = request.security(syminfo.tickerid, "60", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf60Dn = request.security(syminfo.tickerid, "60", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf240Up = request.security(syminfo.tickerid, "240", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tf240Dn = request.security(syminfo.tickerid, "240", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tfDUp = request.security(syminfo.tickerid, "D", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-bool tfDDn = request.security(syminfo.tickerid, "D", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-
-//-------------------------- Market structure -------------------------------
-float ph = ta.pivothigh(high, pivotLen, pivotLen)
-float pl = ta.pivotlow(low, pivotLen, pivotLen)
+//------------------------------- Structure / liquidity --------------------
+float pivotHigh = ta.pivothigh(high, pivotLen, pivotLen)
+float pivotLow = ta.pivotlow(low, pivotLen, pivotLen)
 var float lastSwingHigh = na
 var float lastSwingLow = na
-if not na(ph)
-    lastSwingHigh := ph
-if not na(pl)
-    lastSwingLow := pl
+float priorSwingHigh = lastSwingHigh
+float priorSwingLow = lastSwingLow
 
-bool bosUp = not na(lastSwingHigh) and ta.crossover(close, lastSwingHigh)
-bool bosDn = not na(lastSwingLow) and ta.crossunder(close, lastSwingLow)
+bool equalHigh = not na(pivotHigh) and not na(priorSwingHigh) and math.abs(pivotHigh - priorSwingHigh) <= atrValue * equalLevelAtr
+bool equalLow = not na(pivotLow) and not na(priorSwingLow) and math.abs(pivotLow - priorSwingLow) <= atrValue * equalLevelAtr
+bool bosUp = not na(priorSwingHigh) and ta.crossover(close, priorSwingHigh)
+bool bosDown = not na(priorSwingLow) and ta.crossunder(close, priorSwingLow)
+
 var int structureBias = 0
 bool chochUp = bosUp and structureBias == -1
-bool chochDn = bosDn and structureBias == 1
+bool chochDown = bosDown and structureBias == 1
 if bosUp
     structureBias := 1
-if bosDn
+if bosDown
     structureBias := -1
 
-bool sweepLow = not na(lastSwingLow) and low < lastSwingLow and close > lastSwingLow
-bool sweepHigh = not na(lastSwingHigh) and high > lastSwingHigh and close < lastSwingHigh
+bool sweepLow = not na(priorSwingLow) and low < priorSwingLow and close > priorSwingLow and low[1] >= priorSwingLow
+bool sweepHigh = not na(priorSwingHigh) and high > priorSwingHigh and close < priorSwingHigh and high[1] <= priorSwingHigh
+
+if not na(pivotHigh)
+    lastSwingHigh := pivotHigh
+if not na(pivotLow)
+    lastSwingLow := pivotLow
+
 bool bullFVG = low > high[2]
 bool bearFVG = high < low[2]
 
-// Simple OB proxy: last opposite candle before a confirmed structure break.
 var float bullOBTop = na
 var float bullOBBottom = na
 var float bearOBTop = na
@@ -156,276 +175,388 @@ var float bearOBBottom = na
 if bosUp and close[1] < open[1]
     bullOBTop := open[1]
     bullOBBottom := low[1]
-if bosDn and close[1] > open[1]
+if bosDown and close[1] > open[1]
     bearOBTop := high[1]
     bearOBBottom := open[1]
+
 bool inBullOB = not na(bullOBTop) and close <= bullOBTop and close >= bullOBBottom
 bool inBearOB = not na(bearOBTop) and close >= bearOBBottom and close <= bearOBTop
+float dealingMid = not na(lastSwingHigh) and not na(lastSwingLow) ? (lastSwingHigh + lastSwingLow) / 2.0 : na
+bool discountZone = not na(dealingMid) and close < dealingMid
+bool premiumZone = not na(dealingMid) and close > dealingMid
 
-//------------------------------- Scoring -----------------------------------
+//------------------------------- Confluence score -------------------------
 int longScore = 0
 int shortScore = 0
-longScore += trendUp ? 15 : emaFast > emaMid ? 8 : 0
-shortScore += trendDn ? 15 : emaFast < emaMid ? 8 : 0
-longScore += rsiUp ? 10 : rsi > 50 ? 5 : 0
-shortScore += rsiDn ? 10 : rsi < 50 ? 5 : 0
-longScore += macdUp ? 10 : 0
-shortScore += macdDn ? 10 : 0
-longScore += stUp ? 8 : 0
-shortScore += stDn ? 8 : 0
-longScore += vwapUp ? 7 : 0
-shortScore += vwapDn ? 7 : 0
-longScore += volOK and close > open ? 5 : 0
-shortScore += volOK and close < open ? 5 : 0
-longScore += candleUp ? 7 : 0
-shortScore += candleDn ? 7 : 0
-longScore += bbBull or close > bbBasis ? 5 : 0
-shortScore += bbBear or close < bbBasis ? 5 : 0
-longScore += useStructure and (bosUp or chochUp) ? 10 : 0
-shortScore += useStructure and (bosDn or chochDn) ? 10 : 0
-longScore += useSweeps and sweepLow ? 10 : 0
-shortScore += useSweeps and sweepHigh ? 10 : 0
-longScore += inBullOB ? 5 : 0
-shortScore += inBearOB ? 5 : 0
-longScore += mtfLongOK ? (useMTF ? 8 : 0) : 0
-shortScore += mtfShortOK ? (useMTF ? 8 : 0) : 0
+longScore += emaBull ? 12 : emaFast > emaMid ? 6 : 0
+shortScore += emaBear ? 12 : emaFast < emaMid ? 6 : 0
+longScore += rsiBull ? 8 : rsiValue > 50 ? 4 : 0
+shortScore += rsiBear ? 8 : rsiValue < 50 ? 4 : 0
+longScore += macdBull ? 8 : 0
+shortScore += macdBear ? 8 : 0
+longScore += supertrendBull ? 8 : 0
+shortScore += supertrendBear ? 8 : 0
+longScore += vwapBull ? 6 : 0
+shortScore += vwapBear ? 6 : 0
+longScore += volumeOK and close > open ? 5 : 0
+shortScore += volumeOK and close < open ? 5 : 0
+longScore += candleBull ? 5 : 0
+shortScore += candleBear ? 5 : 0
+longScore += bbBull ? 4 : 0
+shortScore += bbBear ? 4 : 0
+longScore += useStructureScore and (bosUp or chochUp) ? 10 : 0
+shortScore += useStructureScore and (bosDown or chochDown) ? 10 : 0
+longScore += useSweepScore and (sweepLow or equalLow) ? 10 : 0
+shortScore += useSweepScore and (sweepHigh or equalHigh) ? 10 : 0
+longScore += (inBullOB or (discountZone and bullFVG)) ? 5 : 0
+shortScore += (inBearOB or (premiumZone and bearFVG)) ? 5 : 0
+longScore += h1Bull ? 4 : 0
+longScore += h4Bull ? 3 : 0
+shortScore += h1Bear ? 4 : 0
+shortScore += h4Bear ? 3 : 0
+longScore += adxBull ? 5 : 0
+shortScore += adxBear ? 5 : 0
 longScore := math.min(longScore, 100)
 shortScore := math.min(shortScore, 100)
 
-int threshold = mode == "FAST MODE" ? minScore : math.max(minScore, 70)
-bool rawLong = longScore >= threshold and longScore > shortScore
-bool rawShort = shortScore >= threshold and shortScore > longScore
-bool barOK = confirmedOnly ? barstate.isconfirmed : (earlySignals or barstate.isconfirmed)
+int effectiveThreshold = mode == "FAST MODE" ? minScore : math.max(minScore, 70)
+bool rawBuy = longScore >= effectiveThreshold and longScore > shortScore and mtfBullOK
+bool rawSell = shortScore >= effectiveThreshold and shortScore > longScore and mtfBearOK
 
+//------------------------------- Trade state -------------------------------
+const int STATE_WAITING = 0
+const int STATE_BUY_ACTIVE = 1
+const int STATE_SELL_ACTIVE = 2
+const int STATE_TP1 = 3
+const int STATE_TP2 = 4
+const int STATE_TP3 = 5
+const int STATE_STOP = 6
+
+var int activeDirection = 0
+var int tradeState = STATE_WAITING
 var int lastSignalBar = na
-var int lastSignalDir = 0
-bool spacingOK = na(lastSignalBar) or bar_index - lastSignalBar >= minBarsGap
-bool cooldownOK = na(lastSignalBar) or bar_index - lastSignalBar > cooldown
-bool reversalOKLong = not confirmOpposite or lastSignalDir != -1 or bosUp or ta.crossover(emaFast, emaMid)
-bool reversalOKShort = not confirmOpposite or lastSignalDir != 1 or bosDn or ta.crossunder(emaFast, emaMid)
-bool buySignal = rawLong and barOK and spacingOK and cooldownOK and reversalOKLong and (not useMTF or mtfLongOK)
-bool sellSignal = rawShort and barOK and spacingOK and cooldownOK and reversalOKShort and (not useMTF or mtfShortOK)
-bool earlyBuySignal = earlySignals and not barstate.isconfirmed and rawLong and spacingOK and cooldownOK and reversalOKLong and (not useMTF or mtfLongOK)
-bool earlySellSignal = earlySignals and not barstate.isconfirmed and rawShort and spacingOK and cooldownOK and reversalOKShort and (not useMTF or mtfShortOK)
-if buySignal
-    lastSignalBar := bar_index
-    lastSignalDir := 1
-if sellSignal
-    lastSignalBar := bar_index
-    lastSignalDir := -1
+var int lastSignalDirection = 0
+var int lastTradeDirection = 0
+var int tradeEntryBar = na
+var float tradeEntry = na
+var float tradeStop = na
+var float tradeTP1 = na
+var float tradeTP2 = na
+var float tradeTP3 = na
+var int lastSignalScore = 0
+var string lastSignalName = "لا توجد إشارة"
+var bool tp1Done = false
+var bool tp2Done = false
+var bool tp3Done = false
+var bool stopWasBE = false
+var bool ambiguousExit = false
 
-bool strongBuy = buySignal and longScore >= 85
-bool strongSell = sellSignal and shortScore >= 85
+bool spacingOK = na(lastSignalBar) or bar_index - lastSignalBar >= minBarsBetween
+bool cooldownOK = na(lastSignalBar) or bar_index - lastSignalBar >= cooldownBars
+bool reversalBuyOK = not confirmReversal or lastSignalDirection != -1 or bosUp or ta.crossover(emaFast, emaMid)
+bool reversalSellOK = not confirmReversal or lastSignalDirection != 1 or bosDown or ta.crossunder(emaFast, emaMid)
+bool buySignal = barstate.isconfirmed and rawBuy and spacingOK and cooldownOK and reversalBuyOK and activeDirection != 1
+bool sellSignal = barstate.isconfirmed and rawSell and spacingOK and cooldownOK and reversalSellOK and activeDirection != -1
 
-//----------------------- Trade levels: frozen per signal -------------------
-var int activeDir = 0
-var float entryPrice = na
-var float stopPrice = na
-var float target1 = na
-var float target2 = na
-var float target3 = na
-var bool hitTP1 = false
-var bool hitTP2 = false
-var bool hitTP3 = false
-var bool hitSL = false
-var bool beActive = false
+// Event flags reset on every bar, then fire once when a confirmed transition occurs.
+bool tp1Event = false
+bool tp2Event = false
+bool tp3Event = false
+bool stopEvent = false
+bool ambiguousEvent = false
+
+// Conservative OHLC handling: if stop and any target are touched in one candle,
+// the stop is assumed to have happened first. No intrabar path is fabricated.
+if activeDirection != 0 and barstate.isconfirmed and not na(tradeStop)
+    bool stopTouched = activeDirection == 1 ? low <= tradeStop : high >= tradeStop
+    bool tp1Touched = activeDirection == 1 ? high >= tradeTP1 : low <= tradeTP1
+    bool tp2Touched = activeDirection == 1 ? high >= tradeTP2 : low <= tradeTP2
+    bool tp3Touched = activeDirection == 1 ? high >= tradeTP3 : low <= tradeTP3
+    bool anyTargetTouched = tp1Touched or tp2Touched or tp3Touched
+    if stopTouched
+        stopEvent := true
+        ambiguousEvent := anyTargetTouched
+        ambiguousExit := anyTargetTouched
+        stopWasBE := moveToBEAfterTP1 and tp1Done
+        tradeState := STATE_STOP
+        activeDirection := 0
+    else
+        if tp1Touched and not tp1Done
+            tp1Done := true
+            tp1Event := true
+            if moveToBEAfterTP1
+                tradeStop := tradeEntry
+        if tp2Touched and not tp2Done
+            tp2Done := true
+            tp2Event := true
+        if tp3Touched and not tp3Done
+            tp3Done := true
+            tp3Event := true
+        if tp3Done
+            tradeState := STATE_TP3
+            activeDirection := 0
+        else if tp2Done
+            tradeState := STATE_TP2
+        else if tp1Done
+            tradeState := STATE_TP1
+
+//------------------------------- Drawing handles ---------------------------
 var line entryLine = na
 var line stopLine = na
 var line tp1Line = na
 var line tp2Line = na
 var line tp3Line = na
+var array<line> archivedLines = array.new<line>()
 
+var line liquidityHighLine = na
+var line liquidityLowLine = na
+var box bullFVGBox = na
+var box bearFVGBox = na
+var box bullOBBox = na
+var box bearOBBox = na
+
+// Draw/update only the most recent liquidity levels; never create one per bar.
+if showLiquidity and not cleanMode
+    if not na(pivotHigh)
+        if na(liquidityHighLine)
+            liquidityHighLine := line.new(bar_index - pivotLen, pivotHigh, bar_index + 20, pivotHigh, color=color.new(color.red, 30), style=line.style_dotted, width=1)
+        else
+            line.set_xy1(liquidityHighLine, bar_index - pivotLen, pivotHigh)
+            line.set_xy2(liquidityHighLine, bar_index + 20, pivotHigh)
+    if not na(pivotLow)
+        if na(liquidityLowLine)
+            liquidityLowLine := line.new(bar_index - pivotLen, pivotLow, bar_index + 20, pivotLow, color=color.new(color.lime, 30), style=line.style_dotted, width=1)
+        else
+            line.set_xy1(liquidityLowLine, bar_index - pivotLen, pivotLow)
+            line.set_xy2(liquidityLowLine, bar_index + 20, pivotLow)
+    if not na(liquidityHighLine)
+        line.set_x2(liquidityHighLine, bar_index + 20)
+    if not na(liquidityLowLine)
+        line.set_x2(liquidityLowLine, bar_index + 20)
+else
+    if not na(liquidityHighLine)
+        line.delete(liquidityHighLine)
+        liquidityHighLine := na
+    if not na(liquidityLowLine)
+        line.delete(liquidityLowLine)
+        liquidityLowLine := na
+
+// Keep at most one bullish/bearish FVG box and one bullish/bearish OB box.
+if showSMCZones and not cleanMode
+    if bullFVG
+        if not na(bullFVGBox)
+            box.delete(bullFVGBox)
+        bullFVGBox := box.new(bar_index - 2, low, bar_index + 15, high[2], bgcolor=color.new(color.lime, 90), border_color=color.new(color.lime, 60))
+    if bearFVG
+        if not na(bearFVGBox)
+            box.delete(bearFVGBox)
+        bearFVGBox := box.new(bar_index - 2, low[2], bar_index + 15, high, bgcolor=color.new(color.red, 90), border_color=color.new(color.red, 60))
+    if bosUp and not na(bullOBTop) and not na(bullOBBottom)
+        if not na(bullOBBox)
+            box.delete(bullOBBox)
+        bullOBBox := box.new(bar_index, bullOBTop, bar_index + 15, bullOBBottom, bgcolor=color.new(color.green, 91), border_color=color.new(color.green, 65))
+    if bosDown and not na(bearOBTop) and not na(bearOBBottom)
+        if not na(bearOBBox)
+            box.delete(bearOBBox)
+        bearOBBox := box.new(bar_index, bearOBTop, bar_index + 15, bearOBBottom, bgcolor=color.new(color.maroon, 91), border_color=color.new(color.red, 65))
+    if not na(bullFVGBox)
+        box.set_right(bullFVGBox, bar_index + 15)
+    if not na(bearFVGBox)
+        box.set_right(bearFVGBox, bar_index + 15)
+    if not na(bullOBBox)
+        box.set_right(bullOBBox, bar_index + 15)
+    if not na(bearOBBox)
+        box.set_right(bearOBBox, bar_index + 15)
+else
+    if not na(bullFVGBox)
+        box.delete(bullFVGBox)
+        bullFVGBox := na
+    if not na(bearFVGBox)
+        box.delete(bearFVGBox)
+        bearFVGBox := na
+    if not na(bullOBBox)
+        box.delete(bullOBBox)
+        bullOBBox := na
+    if not na(bearOBBox)
+        box.delete(bearOBBox)
+        bearOBBox := na
+
+//------------------------------- New trade ----------------------------------
 if buySignal or sellSignal
-    activeDir := buySignal ? 1 : -1
-    entryPrice := close
-    float atrRisk = math.max(atr * slAtrMult, syminfo.mintick)
-    float swingStop = activeDir == 1 ? ta.lowest(low, swingSLBars) : ta.highest(high, swingSLBars)
-    float rawStop = activeDir == 1 ? entryPrice - atrRisk : entryPrice + atrRisk
-    stopPrice := useSwingSL ? (activeDir == 1 ? math.min(rawStop, swingStop) : math.max(rawStop, swingStop)) : rawStop
-    float risk = math.max(math.abs(entryPrice - stopPrice), syminfo.mintick)
-    target1 := entryPrice + activeDir * risk * tp1R
-    target2 := entryPrice + activeDir * risk * tp2R
-    target3 := entryPrice + activeDir * risk * tp3R
-    hitTP1 := false
-    hitTP2 := false
-    hitTP3 := false
-    hitSL := false
-    beActive := false
+    // Archive or delete the previous active five-line group before replacing it.
     if not na(entryLine)
-        line.delete(entryLine)
-        line.delete(stopLine)
-        line.delete(tp1Line)
-        line.delete(tp2Line)
-        line.delete(tp3Line)
-    if showTradeLevels and not cleanMode
-        entryLine := line.new(bar_index, entryPrice, bar_index + 1, entryPrice, extend=extend.right, color=color.new(color.aqua, 0), width=2)
-        stopLine := line.new(bar_index, stopPrice, bar_index + 1, stopPrice, extend=extend.right, color=color.new(color.red, 0), style=line.style_dashed)
-        tp1Line := line.new(bar_index, target1, bar_index + 1, target1, extend=extend.right, color=color.new(color.lime, 0))
-        tp2Line := line.new(bar_index, target2, bar_index + 1, target2, extend=extend.right, color=color.new(color.lime, 15))
-        tp3Line := line.new(bar_index, target3, bar_index + 1, target3, extend=extend.right, color=color.new(color.lime, 30))
+        line.set_x2(entryLine, bar_index)
+        line.set_x2(stopLine, bar_index)
+        line.set_x2(tp1Line, bar_index)
+        line.set_x2(tp2Line, bar_index)
+        line.set_x2(tp3Line, bar_index)
+        if keepPreviousTrades
+            array.push(archivedLines, entryLine)
+            array.push(archivedLines, stopLine)
+            array.push(archivedLines, tp1Line)
+            array.push(archivedLines, tp2Line)
+            array.push(archivedLines, tp3Line)
+        else
+            line.delete(entryLine)
+            line.delete(stopLine)
+            line.delete(tp1Line)
+            line.delete(tp2Line)
+            line.delete(tp3Line)
+    while array.size(archivedLines) > maxArchivedTrades * 5
+        line oldestLine = array.shift(archivedLines)
+        line.delete(oldestLine)
 
-bool newTP1 = false
-bool newTP2 = false
-bool newTP3 = false
-bool newSL = false
-bool newBE = false
-if activeDir != 0 and not hitSL
-    if activeDir == 1
-        newSL := low <= stopPrice
-        newTP1 := not hitTP1 and high >= target1
-        newTP2 := not hitTP2 and high >= target2
-        newTP3 := not hitTP3 and high >= target3
-    else
-        newSL := high >= stopPrice
-        newTP1 := not hitTP1 and low <= target1
-        newTP2 := not hitTP2 and low <= target2
-        newTP3 := not hitTP3 and low <= target3
-    if newTP1
-        hitTP1 := true
-        if breakEvenAfterTP1 and not beActive
-            stopPrice := entryPrice
-            beActive := true
-            newBE := true
-            if not na(stopLine)
-                line.set_y1(stopLine, stopPrice)
-                line.set_y2(stopLine, stopPrice)
-    if newTP2
-        hitTP2 := true
-    if newTP3
-        hitTP3 := true
-    if newSL
-        hitSL := true
+    entryLine := na
+    stopLine := na
+    tp1Line := na
+    tp2Line := na
+    tp3Line := na
 
-string tradeStatus = hitSL ? (beActive ? "تعادل / وقف" : "وقف خسارة") : hitTP3 ? "وصل TP3" : hitTP2 ? "وصل TP2" : hitTP1 ? "وصل TP1" : activeDir == 0 ? "لا توجد صفقة" : "مفتوحة"
+    activeDirection := buySignal ? 1 : -1
+    lastTradeDirection := activeDirection
+    tradeState := activeDirection == 1 ? STATE_BUY_ACTIVE : STATE_SELL_ACTIVE
+    tradeEntryBar := bar_index
+    tradeEntry := close
+    float atrDistance = math.max(atrValue * slAtrMult, syminfo.mintick)
+    float swingLowCandidate = ta.lowest(low, swingStopBars)
+    float swingHighCandidate = ta.highest(high, swingStopBars)
+    float rawStop = activeDirection == 1 ? tradeEntry - atrDistance : tradeEntry + atrDistance
+    tradeStop := useSwingStop ? (activeDirection == 1 and swingLowCandidate < tradeEntry ? math.max(rawStop, swingLowCandidate) : activeDirection == -1 and swingHighCandidate > tradeEntry ? math.min(rawStop, swingHighCandidate) : rawStop) : rawStop
+    float riskDistance = math.max(math.abs(tradeEntry - tradeStop), syminfo.mintick)
+    tradeTP1 := tradeEntry + activeDirection * riskDistance * tp1R
+    tradeTP2 := tradeEntry + activeDirection * riskDistance * tp2R
+    tradeTP3 := tradeEntry + activeDirection * riskDistance * tp3R
+    tp1Done := false
+    tp2Done := false
+    tp3Done := false
+    stopWasBE := false
+    ambiguousExit := false
+    lastSignalBar := bar_index
+    lastSignalDirection := activeDirection
+    lastSignalScore := activeDirection == 1 ? longScore : shortScore
+    lastSignalName := activeDirection == 1 ? (longScore >= 85 ? "شراء قوي" : "شراء") : (shortScore >= 85 ? "بيع قوي" : "بيع")
 
-//------------------------------- Plotting ----------------------------------
-plot(showEMA and not cleanMode ? emaFast : na, "EMA 9", color=color.new(color.aqua, 0))
-plot(showEMA and not cleanMode ? emaMid : na, "EMA 21", color=color.new(color.orange, 0))
-plot(showEMA and not cleanMode ? emaSlow : na, "EMA 50", color=color.new(color.blue, 20))
-plot(not cleanMode ? stLine : na, "Supertrend", color=stUp ? color.new(color.lime, 35) : color.new(color.red, 35), linewidth=1)
+    if showTradeLines
+        entryLine := line.new(tradeEntryBar, tradeEntry, bar_index + 12, tradeEntry, color=color.new(color.aqua, 0), width=tradeLineWidth)
+        stopLine := line.new(tradeEntryBar, tradeStop, bar_index + 12, tradeStop, color=color.new(color.red, 0), width=tradeLineWidth, style=line.style_dashed)
+        tp1Line := line.new(tradeEntryBar, tradeTP1, bar_index + 12, tradeTP1, color=color.new(color.lime, 0), width=tradeLineWidth)
+        tp2Line := line.new(tradeEntryBar, tradeTP2, bar_index + 12, tradeTP2, color=color.new(color.green, 15), width=tradeLineWidth, style=line.style_dashed)
+        tp3Line := line.new(tradeEntryBar, tradeTP3, bar_index + 12, tradeTP3, color=color.new(color.teal, 20), width=tradeLineWidth, style=line.style_dotted)
 
-plotshape(buySignal and not strongBuy, title="BUY", style=shape.labelup, text="شراء", color=color.new(color.green, 0), textcolor=color.white, location=location.belowbar, size=size.tiny)
-plotshape(strongBuy, title="STRONG BUY", style=shape.labelup, text="شراء قوي", color=color.new(color.lime, 0), textcolor=color.black, location=location.belowbar, size=size.small)
-plotshape(sellSignal and not strongSell, title="SELL", style=shape.labeldown, text="بيع", color=color.new(color.red, 0), textcolor=color.white, location=location.abovebar, size=size.tiny)
-plotshape(strongSell, title="STRONG SELL", style=shape.labeldown, text="بيع قوي", color=color.new(color.maroon, 0), textcolor=color.white, location=location.abovebar, size=size.small)
-plotshape(earlyBuySignal, title="EARLY BUY", style=shape.triangleup, text="مبكر ↑", color=color.new(color.lime, 45), textcolor=color.black, location=location.belowbar, size=size.tiny)
-plotshape(earlySellSignal, title="EARLY SELL", style=shape.triangledown, text="مبكر ↓", color=color.new(color.red, 45), textcolor=color.white, location=location.abovebar, size=size.tiny)
+// Update existing active lines; do not create lines on ordinary bars.
+if activeDirection != 0 and showTradeLines
+    if not na(entryLine)
+        line.set_xy1(entryLine, tradeEntryBar, tradeEntry)
+        line.set_xy2(entryLine, bar_index + 12, tradeEntry)
+        line.set_xy1(stopLine, tradeEntryBar, tradeStop)
+        line.set_xy2(stopLine, bar_index + 12, tradeStop)
+        line.set_xy1(tp1Line, tradeEntryBar, tradeTP1)
+        line.set_xy2(tp1Line, bar_index + 12, tradeTP1)
+        line.set_xy1(tp2Line, tradeEntryBar, tradeTP2)
+        line.set_xy2(tp2Line, bar_index + 12, tradeTP2)
+        line.set_xy1(tp3Line, tradeEntryBar, tradeTP3)
+        line.set_xy2(tp3Line, bar_index + 12, tradeTP3)
 
-if showScoreLabels and buySignal and not cleanMode
-    label.new(bar_index, low, "BUY • " + str.tostring(longScore) + "%", style=label.style_label_up, color=color.new(color.green, 15), textcolor=color.white, size=size.tiny)
-if showScoreLabels and sellSignal and not cleanMode
-    label.new(bar_index, high, "SELL • " + str.tostring(shortScore) + "%", style=label.style_label_down, color=color.new(color.red, 15), textcolor=color.white, size=size.tiny)
+if (stopEvent or tp3Event) and not na(entryLine)
+    line.set_x2(entryLine, bar_index)
+    line.set_x2(stopLine, bar_index)
+    line.set_x2(tp1Line, bar_index)
+    line.set_x2(tp2Line, bar_index)
+    line.set_x2(tp3Line, bar_index)
 
-if showStructure and not cleanMode and bosUp
-    label.new(bar_index, high, chochUp ? "CHoCH ↑" : "BOS ↑", style=label.style_label_down, color=color.new(color.teal, 15), textcolor=color.white, size=size.tiny)
-if showStructure and not cleanMode and bosDn
-    label.new(bar_index, low, chochDn ? "CHoCH ↓" : "BOS ↓", style=label.style_label_up, color=color.new(color.orange, 15), textcolor=color.white, size=size.tiny)
-if showSweeps and not cleanMode and sweepLow
-    label.new(bar_index, low, "سحب سيولة ↑", style=label.style_label_up, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
-if showSweeps and not cleanMode and sweepHigh
-    label.new(bar_index, high, "سحب سيولة ↓", style=label.style_label_down, color=color.new(color.red, 30), textcolor=color.white, size=size.tiny)
+//------------------------------- Signal markers ----------------------------
+bool strongBuy = buySignal and longScore >= 85
+bool strongSell = sellSignal and shortScore >= 85
+bool smallMarks = signalSizeInput == "صغير"
+bool mediumMarks = signalSizeInput == "متوسط"
+bool largeMarks = signalSizeInput == "كبير"
 
-// Keep only the most recent FVG and OB boxes.
-var box fvgBox = na
-var box obBox = na
-if showFVG and not cleanMode and bullFVG
-    if not na(fvgBox)
-        box.delete(fvgBox)
-    fvgBox := box.new(bar_index - 2, low, bar_index + 10, high[2], bgcolor=color.new(color.green, 88), border_color=color.new(color.green, 55))
-if showFVG and not cleanMode and bearFVG
-    if not na(fvgBox)
-        box.delete(fvgBox)
-    fvgBox := box.new(bar_index - 2, low[2], bar_index + 10, high, bgcolor=color.new(color.red, 88), border_color=color.new(color.red, 55))
-if showOB and not cleanMode and bosUp and not na(bullOBTop)
-    if not na(obBox)
-        box.delete(obBox)
-    obBox := box.new(bar_index, bullOBTop, bar_index + 15, bullOBBottom, bgcolor=color.new(color.green, 90), border_color=color.new(color.green, 60))
-if showOB and not cleanMode and bosDn and not na(bearOBTop)
-    if not na(obBox)
-        box.delete(obBox)
-    obBox := box.new(bar_index, bearOBTop, bar_index + 15, bearOBBottom, bgcolor=color.new(color.red, 90), border_color=color.new(color.red, 60))
+plotshape(showSignals and smallMarks and buySignal, title="BUY small", style=shape.arrowup, location=location.belowbar, color=color.lime, text="BUY", textcolor=color.white, size=size.tiny)
+plotshape(showSignals and mediumMarks and buySignal, title="BUY medium", style=shape.arrowup, location=location.belowbar, color=color.lime, text="BUY", textcolor=color.white, size=size.small)
+plotshape(showSignals and largeMarks and buySignal, title="BUY large", style=shape.arrowup, location=location.belowbar, color=color.lime, text="BUY", textcolor=color.white, size=size.normal)
+plotshape(showSignals and smallMarks and sellSignal, title="SELL small", style=shape.arrowdown, location=location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.tiny)
+plotshape(showSignals and mediumMarks and sellSignal, title="SELL medium", style=shape.arrowdown, location=location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.small)
+plotshape(showSignals and largeMarks and sellSignal, title="SELL large", style=shape.arrowdown, location=location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.normal)
 
-//----------------------------- Dashboard -----------------------------------
-f_pos(string p) =>
-    p == "أعلى اليسار" ? position.top_left : p == "أسفل اليمين" ? position.bottom_right : p == "أسفل اليسار" ? position.bottom_left : position.top_right
-f_dir(bool up, bool dn) =>
-    up ? "↑" : dn ? "↓" : "•"
-f_price(float v) =>
-    na(v) ? "—" : str.tostring(v, format.mintick)
-f_trendText() =>
-    trendUp ? "صاعد" : trendDn ? "هابط" : "عرضي"
-f_momentumText() =>
-    math.abs(macdHist) > math.abs(macdHist[1]) ? "قوي" : math.abs(macdHist) > 0 ? "متوسط" : "ضعيف"
+// Optional price overlays only. RSI / MACD / ADX remain calculation-only variables.
+plot(showMovingAverages and not cleanMode ? emaFast : na, "EMA Fast", color=color.new(color.aqua, 0))
+plot(showMovingAverages and not cleanMode ? emaMid : na, "EMA Mid", color=color.new(color.orange, 0))
+plot(showMovingAverages and not cleanMode ? emaSlow : na, "EMA Slow", color=color.new(color.blue, 15))
+plot(showSupertrend and not cleanMode ? supertrendValue : na, "Supertrend", color=supertrendDirection < 0 ? color.new(color.lime, 20) : color.new(color.red, 20))
 
-var table dash = table.new(f_pos(dashPosition), 2, 15, border_width=1, frame_color=color.new(color.gray, 55), border_color=color.new(color.gray, 75))
+//------------------------------- Dashboard ---------------------------------
+var table dashboard = table.new(f_pos(dashboardPosition), 2, 14, border_width=1, frame_color=color.new(color.gray, 60), border_color=color.new(color.gray, 75))
+string marketTrend = f_direction(emaBull, emaBear)
+string marketCondition = adxValue >= 25 ? "اتجاه قوي" : adxValue >= adxFloor ? "اتجاه متوسط" : "عرضي"
+string stateText = f_stateText(tradeState)
+if ambiguousExit
+    stateText += " • أولوية الوقف"
+string h1Text = f_direction(h1Bull, h1Bear)
+string h4Text = f_direction(h4Bull, h4Bear)
+color panelBg = color.rgb(13, 20, 32)
+color panelHead = color.rgb(24, 39, 57)
+color panelCell = color.rgb(31, 43, 58)
+color trendColor = emaBull ? color.lime : emaBear ? color.red : color.yellow
+color stateColor = tradeState == STATE_STOP ? color.red : tradeState == STATE_TP3 ? color.lime : tradeState == STATE_WAITING ? color.yellow : color.aqua
+string dashSize = f_size(dashboardSizeInput)
+
 if barstate.islast and showDashboard
-    color bg = color.rgb(13, 20, 32)
-    color head = color.rgb(23, 39, 58)
-    color neutral = color.rgb(33, 43, 58)
-    string sigText = strongBuy ? "شراء قوي" : buySignal ? "شراء" : strongSell ? "بيع قوي" : sellSignal ? "بيع" : "انتظار"
-    color sigColor = buySignal ? color.new(color.green, 0) : sellSignal ? color.new(color.red, 0) : color.new(color.yellow, 10)
-    int currentScore = buySignal or longScore > shortScore ? longScore : shortScore
-    table.cell(dash, 0, 0, "NORO AI PRO", bgcolor=head, text_color=color.white, text_size=size.small)
-    table.cell(dash, 1, 0, mode, bgcolor=head, text_color=color.aqua, text_size=size.tiny)
-    table.cell(dash, 0, 1, "الحالة", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 1, f_trendText(), bgcolor=neutral, text_color=trendUp ? color.lime : trendDn ? color.red : color.yellow, text_size=size.tiny)
-    table.cell(dash, 0, 2, "الإشارة", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 2, sigText, bgcolor=sigColor, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 3, "التوافق", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 3, str.tostring(currentScore) + "%", bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 4, "الزخم", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 4, f_momentumText(), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 5, "RSI", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 5, str.tostring(rsi, "#.0"), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 6, "MTF 1–15m", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 6, "1 " + f_dir(tf1Up, tf1Dn) + " 3 " + f_dir(tf3Up, tf3Dn) + " 5 " + f_dir(tf5Up, tf5Dn) + " 15 " + f_dir(tf15Up, tf15Dn), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 7, "MTF 30m–1D", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 7, "30 " + f_dir(tf30Up, tf30Dn) + " 1H " + f_dir(tf60Up, tf60Dn) + " 4H " + f_dir(tf240Up, tf240Dn) + " 1D " + f_dir(tfDUp, tfDDn), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 8, "ATR", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 8, f_price(atr), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 9, "ENTRY", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 9, f_price(entryPrice), bgcolor=neutral, text_color=color.aqua, text_size=size.tiny)
-    table.cell(dash, 0, 10, "SL", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 10, f_price(stopPrice), bgcolor=neutral, text_color=color.red, text_size=size.tiny)
-    table.cell(dash, 0, 11, "TP1 / TP2", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 11, f_price(target1) + " / " + f_price(target2), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
-    table.cell(dash, 0, 12, "TP3", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 12, f_price(target3), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
-    table.cell(dash, 0, 13, "R:R إلى TP3", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 13, not na(entryPrice) and not na(stopPrice) ? "1:" + str.tostring(math.abs(target3 - entryPrice) / math.max(math.abs(entryPrice - stopPrice), syminfo.mintick), "#.##") : "—", bgcolor=neutral, text_color=color.aqua, text_size=size.tiny)
-    table.cell(dash, 0, 14, "حالة الصفقة", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 14, tradeStatus, bgcolor=neutral, text_color=hitSL ? color.red : hitTP1 ? color.lime : color.white, text_size=size.tiny)
+    table.cell(dashboard, 0, 0, "NORO AI PRO", bgcolor=panelHead, text_color=color.white, text_size=dashSize)
+    table.cell(dashboard, 1, 0, mode, bgcolor=panelHead, text_color=color.aqua, text_size=dashSize)
+    table.cell(dashboard, 0, 1, "الأصل المالي", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 1, syminfo.ticker, bgcolor=panelCell, text_color=color.white, text_size=dashSize)
+    table.cell(dashboard, 0, 2, "الإطار الزمني", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 2, timeframe.period, bgcolor=panelCell, text_color=color.white, text_size=dashSize)
+    table.cell(dashboard, 0, 3, "الاتجاه العام", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 3, marketTrend, bgcolor=panelCell, text_color=trendColor, text_size=dashSize)
+    table.cell(dashboard, 0, 4, "اتجاه H1", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 4, h1Text + " ✓", bgcolor=panelCell, text_color=h1Bull ? color.lime : h1Bear ? color.red : color.yellow, text_size=dashSize)
+    table.cell(dashboard, 0, 5, "اتجاه H4", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 5, h4Text + " ✓", bgcolor=panelCell, text_color=h4Bull ? color.lime : h4Bear ? color.red : color.yellow, text_size=dashSize)
+    table.cell(dashboard, 0, 6, "قوة الشراء", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 6, str.tostring(longScore) + " / 100", bgcolor=panelCell, text_color=color.lime, text_size=dashSize)
+    table.cell(dashboard, 0, 7, "قوة البيع", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 7, str.tostring(shortScore) + " / 100", bgcolor=panelCell, text_color=color.red, text_size=dashSize)
+    table.cell(dashboard, 0, 8, "آخر إشارة", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 8, lastSignalName + " • " + str.tostring(lastSignalScore) + "%", bgcolor=panelCell, text_color=lastSignalDirection == 1 ? color.lime : lastSignalDirection == -1 ? color.red : color.yellow, text_size=dashSize)
+    table.cell(dashboard, 0, 9, "سعر الدخول", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 9, f_price(tradeEntry), bgcolor=panelCell, text_color=color.aqua, text_size=dashSize)
+    table.cell(dashboard, 0, 10, "وقف الخسارة", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 10, f_price(tradeStop), bgcolor=panelCell, text_color=color.red, text_size=dashSize)
+    table.cell(dashboard, 0, 11, "الأهداف", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 11, f_price(tradeTP1) + " / " + f_price(tradeTP2) + " / " + f_price(tradeTP3), bgcolor=panelCell, text_color=color.lime, text_size=dashSize)
+    table.cell(dashboard, 0, 12, "حالة الصفقة", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 12, stateText, bgcolor=panelCell, text_color=stateColor, text_size=dashSize)
+    table.cell(dashboard, 0, 13, "حالة السوق", bgcolor=panelBg, text_color=color.silver, text_size=dashSize)
+    table.cell(dashboard, 1, 13, marketCondition + " • ADX " + str.tostring(adxValue, "#.0"), bgcolor=panelCell, text_color=color.white, text_size=dashSize)
+else if barstate.islast and not showDashboard
+    table.clear(dashboard, 0, 0, 1, 13)
 
-//----------------------------- Alerts --------------------------------------
-string signalName = strongBuy ? "STRONG BUY" : buySignal ? "BUY" : strongSell ? "STRONG SELL" : "SELL"
-if enableDynamicAlerts and (buySignal or sellSignal)
-    string payload = "{\"system\":\"NORO AI PRO\",\"symbol\":\"" + syminfo.ticker + "\",\"timeframe\":\"" + timeframe.period + "\",\"signal\":\"" + signalName + "\",\"entry\":" + str.tostring(entryPrice, format.mintick) + ",\"sl\":" + str.tostring(stopPrice, format.mintick) + ",\"tp1\":" + str.tostring(target1, format.mintick) + ",\"tp2\":" + str.tostring(target2, format.mintick) + ",\"tp3\":" + str.tostring(target3, format.mintick) + ",\"score\":" + str.tostring(buySignal ? longScore : shortScore) + "}"
-    alert(payload, alert.freq_once_per_bar)
-if enableDynamicAlerts and newTP1
-    alert("{\"system\":\"NORO AI PRO\",\"event\":\"TP1\",\"symbol\":\"" + syminfo.ticker + "\"}", alert.freq_once_per_bar)
-if enableDynamicAlerts and newTP2
-    alert("{\"system\":\"NORO AI PRO\",\"event\":\"TP2\",\"symbol\":\"" + syminfo.ticker + "\"}", alert.freq_once_per_bar)
-if enableDynamicAlerts and newTP3
-    alert("{\"system\":\"NORO AI PRO\",\"event\":\"TP3\",\"symbol\":\"" + syminfo.ticker + "\"}", alert.freq_once_per_bar)
-if enableDynamicAlerts and newSL
-    alert("{\"system\":\"NORO AI PRO\",\"event\":\"STOP LOSS\",\"symbol\":\"" + syminfo.ticker + "\"}", alert.freq_once_per_bar)
-if enableDynamicAlerts and newBE
-    alert("{\"system\":\"NORO AI PRO\",\"event\":\"BREAK EVEN\",\"symbol\":\"" + syminfo.ticker + "\"}", alert.freq_once_per_bar)
+//------------------------------- Alerts ------------------------------------
+if enableJsonAlerts and buySignal
+    alert(f_json(strongBuy ? "STRONG BUY" : "BUY", 1, tradeEntry, tradeStop, tradeTP1, tradeTP2, tradeTP3, longScore), alert.freq_once_per_bar_close)
+if enableJsonAlerts and sellSignal
+    alert(f_json(strongSell ? "STRONG SELL" : "SELL", -1, tradeEntry, tradeStop, tradeTP1, tradeTP2, tradeTP3, shortScore), alert.freq_once_per_bar_close)
+if enableJsonAlerts and tp1Event
+    alert(f_json("TP1 HIT", lastTradeDirection, tradeEntry, tradeStop, tradeTP1, tradeTP2, tradeTP3, lastSignalScore), alert.freq_once_per_bar_close)
+if enableJsonAlerts and tp2Event
+    alert(f_json("TP2 HIT", lastTradeDirection, tradeEntry, tradeStop, tradeTP1, tradeTP2, tradeTP3, lastSignalScore), alert.freq_once_per_bar_close)
+if enableJsonAlerts and tp3Event
+    alert(f_json("TP3 HIT", lastTradeDirection, tradeEntry, tradeStop, tradeTP1, tradeTP2, tradeTP3, lastSignalScore), alert.freq_once_per_bar_close)
+if enableJsonAlerts and stopEvent
+    alert(f_json(stopWasBE ? "BREAK EVEN" : "STOP LOSS HIT", lastTradeDirection, tradeEntry, tradeStop, tradeTP1, tradeTP2, tradeTP3, lastSignalScore), alert.freq_once_per_bar_close)
 
-alertcondition(earlyBuySignal, "EARLY BUY", "NORO AI PRO EARLY BUY — provisional intrabar signal")
-alertcondition(earlySellSignal, "EARLY SELL", "NORO AI PRO EARLY SELL — provisional intrabar signal")
 alertcondition(buySignal, "NORO BUY", "NORO AI PRO BUY")
 alertcondition(strongBuy, "NORO STRONG BUY", "NORO AI PRO STRONG BUY")
 alertcondition(sellSignal, "NORO SELL", "NORO AI PRO SELL")
 alertcondition(strongSell, "NORO STRONG SELL", "NORO AI PRO STRONG SELL")
-alertcondition(bosUp, "BOS UP", "NORO AI PRO BOS UP")
-alertcondition(bosDn, "BOS DOWN", "NORO AI PRO BOS DOWN")
-alertcondition(chochUp, "CHoCH UP", "NORO AI PRO CHoCH UP")
-alertcondition(chochDn, "CHoCH DOWN", "NORO AI PRO CHoCH DOWN")
-alertcondition(sweepLow, "LIQUIDITY SWEEP LOW", "NORO AI PRO bullish liquidity sweep")
-alertcondition(sweepHigh, "LIQUIDITY SWEEP HIGH", "NORO AI PRO bearish liquidity sweep")
-alertcondition(newTP1, "TP1 HIT", "NORO AI PRO TP1 hit")
-alertcondition(newTP2, "TP2 HIT", "NORO AI PRO TP2 hit")
-alertcondition(newTP3, "TP3 HIT", "NORO AI PRO TP3 hit")
-alertcondition(newSL, "STOP LOSS HIT", "NORO AI PRO stop loss hit")
-alertcondition(newBE, "BREAK EVEN", "NORO AI PRO break even activated")
+alertcondition(tp1Event, "NORO TP1 HIT", "NORO AI PRO TP1 HIT")
+alertcondition(tp2Event, "NORO TP2 HIT", "NORO AI PRO TP2 HIT")
+alertcondition(tp3Event, "NORO TP3 HIT", "NORO AI PRO TP3 HIT")
+alertcondition(stopEvent, "NORO STOP LOSS / BE", "NORO AI PRO STOP LOSS / BREAK EVEN")
+alertcondition(bosUp, "NORO BOS UP", "NORO AI PRO BOS UP")
+alertcondition(bosDown, "NORO BOS DOWN", "NORO AI PRO BOS DOWN")
+alertcondition(chochUp, "NORO CHoCH UP", "NORO AI PRO CHoCH UP")
+alertcondition(chochDown, "NORO CHoCH DOWN", "NORO AI PRO CHoCH DOWN")
+alertcondition(sweepLow, "NORO LIQUIDITY SWEEP LOW", "NORO AI PRO BULLISH LIQUIDITY SWEEP")
+alertcondition(sweepHigh, "NORO LIQUIDITY SWEEP HIGH", "NORO AI PRO BEARISH LIQUIDITY SWEEP")
