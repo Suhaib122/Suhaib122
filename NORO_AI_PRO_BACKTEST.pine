@@ -141,7 +141,18 @@ plotshape(longSignal, "BUY", shape.labelup, location.belowbar, color=color.green
 plotshape(shortSignal, "SELL", shape.labeldown, location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.tiny)
 
 // Performance values below come from TradingView's Strategy Tester engine.
-var table panel = table.new(position.top_right, 2, 8, border_width=1)
+var table panel = table.new(position.top_right, 2, 10, border_width=1)
+int longClosedTrades = 0
+int shortClosedTrades = 0
+if barstate.islast and strategy.closedtrades > 0
+    longClosedTrades := 0
+    shortClosedTrades := 0
+    for tradeIndex = 0 to strategy.closedtrades - 1
+        if strategy.closedtrades.entry_id(tradeIndex) == "LONG"
+            longClosedTrades += 1
+        else if strategy.closedtrades.entry_id(tradeIndex) == "SHORT"
+            shortClosedTrades += 1
+
 if barstate.islast and showDashboard
     table.cell(panel, 0, 0, "NORO BACKTEST", bgcolor=color.rgb(20, 35, 54), text_color=color.white)
     table.cell(panel, 1, 0, syminfo.ticker + " • " + timeframe.period, bgcolor=color.rgb(20, 35, 54), text_color=color.aqua)
@@ -156,6 +167,10 @@ if barstate.islast and showDashboard
     table.cell(panel, 0, 5, "Closed Trades", text_color=color.silver)
     table.cell(panel, 1, 5, str.tostring(strategy.closedtrades), text_color=color.white)
     table.cell(panel, 0, 6, "Long / Short", text_color=color.silver)
-    table.cell(panel, 1, 6, str.tostring(strategy.losstrades + strategy.wintrades), text_color=color.white)
-    table.cell(panel, 0, 7, "Risk / Trade", text_color=color.silver)
-    table.cell(panel, 1, 7, str.tostring(riskPct, "#.0") + "% (تقريبي)", text_color=color.yellow)
+    table.cell(panel, 1, 6, str.tostring(longClosedTrades) + " / " + str.tostring(shortClosedTrades), text_color=color.white)
+    table.cell(panel, 0, 7, "متوسط الصفقة الرابحة", text_color=color.silver)
+    table.cell(panel, 1, 7, str.tostring(strategy.avg_winning_trade, "#.##"), text_color=color.lime)
+    table.cell(panel, 0, 8, "متوسط الصفقة الخاسرة", text_color=color.silver)
+    table.cell(panel, 1, 8, str.tostring(strategy.avg_losing_trade, "#.##"), text_color=color.red)
+    table.cell(panel, 0, 9, "Risk / Trade", text_color=color.silver)
+    table.cell(panel, 1, 9, str.tostring(riskPct, "#.0") + "% (نظري)", text_color=color.yellow)
