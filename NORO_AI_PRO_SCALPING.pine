@@ -357,7 +357,7 @@ f_trendText() =>
 f_momentumText() =>
     math.abs(macdHist) > math.abs(macdHist[1]) ? "قوي" : math.abs(macdHist) > 0 ? "متوسط" : "ضعيف"
 
-var table dash = table.new(f_pos(dashPosition), 2, 14, border_width=1, frame_color=color.new(color.gray, 55), border_color=color.new(color.gray, 75))
+var table dash = table.new(f_pos(dashPosition), 2, 15, border_width=1, frame_color=color.new(color.gray, 55), border_color=color.new(color.gray, 75))
 if barstate.islast and showDashboard
     color bg = color.rgb(13, 20, 32)
     color head = color.rgb(23, 39, 58)
@@ -391,8 +391,10 @@ if barstate.islast and showDashboard
     table.cell(dash, 1, 11, f_price(target1) + " / " + f_price(target2), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
     table.cell(dash, 0, 12, "TP3", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
     table.cell(dash, 1, 12, f_price(target3), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
-    table.cell(dash, 0, 13, "حالة الصفقة", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 13, tradeStatus, bgcolor=neutral, text_color=hitSL ? color.red : hitTP1 ? color.lime : color.white, text_size=size.tiny)
+    table.cell(dash, 0, 13, "R:R إلى TP3", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 13, not na(entryPrice) and not na(stopPrice) ? "1:" + str.tostring(math.abs(target3 - entryPrice) / math.max(math.abs(entryPrice - stopPrice), syminfo.mintick), "#.##") : "—", bgcolor=neutral, text_color=color.aqua, text_size=size.tiny)
+    table.cell(dash, 0, 14, "حالة الصفقة", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 14, tradeStatus, bgcolor=neutral, text_color=hitSL ? color.red : hitTP1 ? color.lime : color.white, text_size=size.tiny)
 
 //----------------------------- Alerts --------------------------------------
 string signalName = strongBuy ? "STRONG BUY" : buySignal ? "BUY" : strongSell ? "STRONG SELL" : "SELL"
