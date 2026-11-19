@@ -15,6 +15,7 @@ bool confirmedOnly = input.bool(true, "تأكيد الإشارة عند إغلا
 bool earlySignals = input.bool(false, "إظهار إشارات مبكرة (مؤقتة)", group=G_MODE)
 int minBarsGap = input.int(3, "الحد الأدنى بين الإشارات (شموع)", minval=0, maxval=100, group=G_MODE)
 int cooldown = input.int(2, "فترة التهدئة بعد الإشارة", minval=0, maxval=100, group=G_MODE)
+bool confirmOpposite = input.bool(false, "تأكيد إضافي عند عكس اتجاه آخر إشارة", group=G_MODE)
 bool showScoreLabels = input.bool(true, "إظهار نقاط الإشارة", group=G_MODE)
 
 string G_TREND = "02 • الاتجاه والزخم"
@@ -104,6 +105,24 @@ bool mtfDn = htfClose < htfEma
 bool mtfLongOK = not useMTF or mtfUp
 bool mtfShortOK = not useMTF or mtfDn
 
+// Eight timeframe snapshots. Each uses the last completed candle of that timeframe.
+bool tf1Up = request.security(syminfo.tickerid, "1", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf1Dn = request.security(syminfo.tickerid, "1", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf3Up = request.security(syminfo.tickerid, "3", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf3Dn = request.security(syminfo.tickerid, "3", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf5Up = request.security(syminfo.tickerid, "5", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf5Dn = request.security(syminfo.tickerid, "5", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf15Up = request.security(syminfo.tickerid, "15", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf15Dn = request.security(syminfo.tickerid, "15", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf30Up = request.security(syminfo.tickerid, "30", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf30Dn = request.security(syminfo.tickerid, "30", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf60Up = request.security(syminfo.tickerid, "60", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf60Dn = request.security(syminfo.tickerid, "60", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf240Up = request.security(syminfo.tickerid, "240", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tf240Dn = request.security(syminfo.tickerid, "240", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tfDUp = request.security(syminfo.tickerid, "D", close[1] > ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+bool tfDDn = request.security(syminfo.tickerid, "D", close[1] < ta.ema(close, mtfEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
 //-------------------------- Market structure -------------------------------
 float ph = ta.pivothigh(high, pivotLen, pivotLen)
 float pl = ta.pivotlow(low, pivotLen, pivotLen)
@@ -182,10 +201,12 @@ var int lastSignalBar = na
 var int lastSignalDir = 0
 bool spacingOK = na(lastSignalBar) or bar_index - lastSignalBar >= minBarsGap
 bool cooldownOK = na(lastSignalBar) or bar_index - lastSignalBar > cooldown
-bool reversalOKLong = lastSignalDir != 1 or (bosUp or chochUp or trendDn == false)
-bool reversalOKShort = lastSignalDir != -1 or (bosDn or chochDn or trendUp == false)
+bool reversalOKLong = not confirmOpposite or lastSignalDir != -1 or bosUp or ta.crossover(emaFast, emaMid)
+bool reversalOKShort = not confirmOpposite or lastSignalDir != 1 or bosDn or ta.crossunder(emaFast, emaMid)
 bool buySignal = rawLong and barOK and spacingOK and cooldownOK and reversalOKLong and (not useMTF or mtfLongOK)
 bool sellSignal = rawShort and barOK and spacingOK and cooldownOK and reversalOKShort and (not useMTF or mtfShortOK)
+bool earlyBuySignal = earlySignals and not barstate.isconfirmed and rawLong and spacingOK and cooldownOK and reversalOKLong and (not useMTF or mtfLongOK)
+bool earlySellSignal = earlySignals and not barstate.isconfirmed and rawShort and spacingOK and cooldownOK and reversalOKShort and (not useMTF or mtfShortOK)
 if buySignal
     lastSignalBar := bar_index
     lastSignalDir := 1
@@ -287,6 +308,8 @@ plotshape(buySignal and not strongBuy, title="BUY", style=shape.labelup, text="�
 plotshape(strongBuy, title="STRONG BUY", style=shape.labelup, text="شراء قوي", color=color.new(color.lime, 0), textcolor=color.black, location=location.belowbar, size=size.small)
 plotshape(sellSignal and not strongSell, title="SELL", style=shape.labeldown, text="بيع", color=color.new(color.red, 0), textcolor=color.white, location=location.abovebar, size=size.tiny)
 plotshape(strongSell, title="STRONG SELL", style=shape.labeldown, text="بيع قوي", color=color.new(color.maroon, 0), textcolor=color.white, location=location.abovebar, size=size.small)
+plotshape(earlyBuySignal, title="EARLY BUY", style=shape.triangleup, text="مبكر ↑", color=color.new(color.lime, 45), textcolor=color.black, location=location.belowbar, size=size.tiny)
+plotshape(earlySellSignal, title="EARLY SELL", style=shape.triangledown, text="مبكر ↓", color=color.new(color.red, 45), textcolor=color.white, location=location.abovebar, size=size.tiny)
 
 if showScoreLabels and buySignal and not cleanMode
     label.new(bar_index, low, "BUY • " + str.tostring(longScore) + "%", style=label.style_label_up, color=color.new(color.green, 15), textcolor=color.white, size=size.tiny)
@@ -325,6 +348,8 @@ if showOB and not cleanMode and bosDn and not na(bearOBTop)
 //----------------------------- Dashboard -----------------------------------
 f_pos(string p) =>
     p == "أعلى اليسار" ? position.top_left : p == "أسفل اليمين" ? position.bottom_right : p == "أسفل اليسار" ? position.bottom_left : position.top_right
+f_dir(bool up, bool dn) =>
+    up ? "↑" : dn ? "↓" : "•"
 f_price(float v) =>
     na(v) ? "—" : str.tostring(v, format.mintick)
 f_trendText() =>
@@ -332,7 +357,7 @@ f_trendText() =>
 f_momentumText() =>
     math.abs(macdHist) > math.abs(macdHist[1]) ? "قوي" : math.abs(macdHist) > 0 ? "متوسط" : "ضعيف"
 
-var table dash = table.new(f_pos(dashPosition), 2, 13, border_width=1, frame_color=color.new(color.gray, 55), border_color=color.new(color.gray, 75))
+var table dash = table.new(f_pos(dashPosition), 2, 14, border_width=1, frame_color=color.new(color.gray, 55), border_color=color.new(color.gray, 75))
 if barstate.islast and showDashboard
     color bg = color.rgb(13, 20, 32)
     color head = color.rgb(23, 39, 58)
@@ -352,20 +377,22 @@ if barstate.islast and showDashboard
     table.cell(dash, 1, 4, f_momentumText(), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
     table.cell(dash, 0, 5, "RSI", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
     table.cell(dash, 1, 5, str.tostring(rsi, "#.0"), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 6, "MTF " + htf, bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 6, not useMTF ? "متوقف" : mtfUp ? "صاعد ✓" : mtfDn ? "هابط ✓" : "محايد", bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 7, "ATR", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 7, f_price(atr), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 0, 8, "ENTRY", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 8, f_price(entryPrice), bgcolor=neutral, text_color=color.aqua, text_size=size.tiny)
-    table.cell(dash, 0, 9, "SL", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 9, f_price(stopPrice), bgcolor=neutral, text_color=color.red, text_size=size.tiny)
-    table.cell(dash, 0, 10, "TP1 / TP2", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 10, f_price(target1) + " / " + f_price(target2), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
-    table.cell(dash, 0, 11, "TP3", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 11, f_price(target3), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
-    table.cell(dash, 0, 12, "حالة الصفقة", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
-    table.cell(dash, 1, 12, tradeStatus, bgcolor=neutral, text_color=hitSL ? color.red : hitTP1 ? color.lime : color.white, text_size=size.tiny)
+    table.cell(dash, 0, 6, "MTF 1–15m", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 6, "1 " + f_dir(tf1Up, tf1Dn) + " 3 " + f_dir(tf3Up, tf3Dn) + " 5 " + f_dir(tf5Up, tf5Dn) + " 15 " + f_dir(tf15Up, tf15Dn), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 0, 7, "MTF 30m–1D", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 7, "30 " + f_dir(tf30Up, tf30Dn) + " 1H " + f_dir(tf60Up, tf60Dn) + " 4H " + f_dir(tf240Up, tf240Dn) + " 1D " + f_dir(tfDUp, tfDDn), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 0, 8, "ATR", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 8, f_price(atr), bgcolor=neutral, text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 0, 9, "ENTRY", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 9, f_price(entryPrice), bgcolor=neutral, text_color=color.aqua, text_size=size.tiny)
+    table.cell(dash, 0, 10, "SL", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 10, f_price(stopPrice), bgcolor=neutral, text_color=color.red, text_size=size.tiny)
+    table.cell(dash, 0, 11, "TP1 / TP2", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 11, f_price(target1) + " / " + f_price(target2), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
+    table.cell(dash, 0, 12, "TP3", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 12, f_price(target3), bgcolor=neutral, text_color=color.lime, text_size=size.tiny)
+    table.cell(dash, 0, 13, "حالة الصفقة", bgcolor=bg, text_color=color.silver, text_size=size.tiny)
+    table.cell(dash, 1, 13, tradeStatus, bgcolor=neutral, text_color=hitSL ? color.red : hitTP1 ? color.lime : color.white, text_size=size.tiny)
 
 //----------------------------- Alerts --------------------------------------
 string signalName = strongBuy ? "STRONG BUY" : buySignal ? "BUY" : strongSell ? "STRONG SELL" : "SELL"
@@ -383,6 +410,8 @@ if enableDynamicAlerts and newSL
 if enableDynamicAlerts and newBE
     alert("{\"system\":\"NORO AI PRO\",\"event\":\"BREAK EVEN\",\"symbol\":\"" + syminfo.ticker + "\"}", alert.freq_once_per_bar)
 
+alertcondition(earlyBuySignal, "EARLY BUY", "NORO AI PRO EARLY BUY — provisional intrabar signal")
+alertcondition(earlySellSignal, "EARLY SELL", "NORO AI PRO EARLY SELL — provisional intrabar signal")
 alertcondition(buySignal, "NORO BUY", "NORO AI PRO BUY")
 alertcondition(strongBuy, "NORO STRONG BUY", "NORO AI PRO STRONG BUY")
 alertcondition(sellSignal, "NORO SELL", "NORO AI PRO SELL")
