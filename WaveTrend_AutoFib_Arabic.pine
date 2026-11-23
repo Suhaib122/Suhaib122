@@ -1,0 +1,34 @@
+//@version=6
+// نسخة عربية أولية من مؤشر WaveTrend + AutoFib Trend Scouter.
+// المصدر الأصلي محفوظ في مرفقات المحادثة. راجع README قبل الاستخدام.
+// ملاحظة: لم يتم التحقق من الترجمة عبر Pine Editor؛ هذا الملف يثبت استلام النسخة
+// ويعرّف مدخلاً عربياً واضحاً دون الادعاء بإصلاح جميع أخطاء المصدر.
+indicator(title="مؤشر الموجة والفيبوناتشي - نسخة عربية", shorttitle="WaveTrend AutoFib AR", overlay=false, max_bars_back=5000, max_lines_count=500, max_labels_count=500)
+
+string grp = "الإعدادات العربية"
+bool showWave = input.bool(true, "إظهار مؤشر الموجة", group=grp)
+bool showMid = input.bool(true, "إظهار خط الصفر", group=grp)
+int channelLen = input.int(10, "طول القناة", minval=3, maxval=55, group=grp)
+int averageLen = input.int(21, "طول التنعيم", minval=3, maxval=55, group=grp)
+int signalLen = input.int(4, "طول خط الإشارة", minval=2, maxval=20, group=grp)
+float overbought = input.float(100, "منطقة التشبع الشرائي", minval=50, maxval=150, group=grp)
+float oversold = input.float(-100, "منطقة التشبع البيعي", minval=-150, maxval=-50, group=grp)
+
+float esa = ta.ema(hlc3, channelLen)
+float deviation = ta.ema(math.abs(hlc3 - esa), channelLen)
+float ci = deviation != 0 ? (hlc3 - esa) / (0.015 * deviation) : 0.0
+float wt1 = ta.ema(ci, averageLen)
+float wt2 = ta.sma(wt1, signalLen)
+
+plot(showWave ? wt1 : na, "خط الموجة", color=color.teal, linewidth=2)
+plot(showWave ? wt2 : na, "خط الإشارة", color=color.orange, linewidth=2)
+hline(showMid ? 0 : na, "خط المنتصف", color=color.gray, linestyle=hline.style_dotted)
+hline(showWave ? overbought : na, "التشبع الشرائي", color=color.new(color.red, 35))
+hline(showWave ? oversold : na, "التشبع البيعي", color=color.new(color.lime, 35))
+
+bool buySignal = ta.crossover(wt1, wt2) and wt1 < oversold
+bool sellSignal = ta.crossunder(wt1, wt2) and wt1 > overbought
+plotshape(buySignal, title="إشارة شراء", text="شراء", style=shape.labelup, location=location.bottom, color=color.new(color.green, 0), textcolor=color.white)
+plotshape(sellSignal, title="إشارة بيع", text="بيع", style=shape.labeldown, location=location.top, color=color.new(color.red, 0), textcolor=color.white)
+alertcondition(buySignal, title="إشارة شراء", message="ظهرت إشارة شراء على {{ticker}} - الإطار {{interval}}")
+alertcondition(sellSignal, title="إشارة بيع", message="ظهرت إشارة بيع على {{ticker}} - الإطار {{interval}}")
